@@ -37,8 +37,9 @@ work unchanged under Claude Code with `.claude/` paths.
 
 1. Your implementation inputs are exactly: the landed spec (`docs/<device>-spec.md`), its cited
    public references (pre-fetched under `docs/references/`), and the target OS tree. Nothing else —
-   in particular, never load `cleanroom-investigator` or a board-expert skill: dirty-side roles whose
-   bodies are maps into encumbered source.
+   in particular, never load `cleanroom-investigator`, `board-expert` or `hardware-investigator`, and never
+   read `hardware-specs-gpl`: dirty-side roles and a license-restricted repository whose
+   bodies are maps into encumbered source (the hook blocks them by name).
 2. Never read, fetch, clone, grep, or search for Linux / U-Boot / TF-A / vendor-firmware source in
    any form — checkouts, mirrors, code-browser sites, gists, forum pastes — and never ask another
    agent, subagent, or process to do it for you. Delegated contamination is still contamination.
@@ -179,6 +180,40 @@ takes when the event JSON is malformed. If you edit it, keep that property.
 reliably run them. If implementation happens in the IDE, Tier 2 collapses to permissions plus rules,
 and Tier 1 and the audit carry the weight. Verify by provocation, never by assumption: attempt one
 blocked read in the exact surface you'll be working in, and check the log.
+
+**Firewall by name.** Independently of the policy file, the hook denies the implementer any
+read, search, clone or load that names `board-expert`, `hardware-investigator`,
+`cleanroom-investigator` or `hardware-specs-gpl` (the dirty-side skills and the GPL spec
+repository), however they are installed: plugin cache, linked checkout, a clone under any
+directory. `hardware-specs-docs` and `hardware-specs-permissive` stay readable by design. The
+names are built into the script, so a workspace policy cannot switch the firewall off by omitting
+them; a policy may add names under `blocked_names`. Beyond the name in the text, the hook
+resolves what a call points at when it can see the filesystem: symlinks and `..`, globs expanded
+on disk, `$VAR` and `${VAR}`, quoting and `{a,b}` braces, `cd` followed by a relative read, a
+`Cwd` argument, nested `sh -c` strings, and a recursive search (`grep -r`, `rg`, `find`, `tar`,
+`cp -r`) rooted at or above a blocked directory, to a bounded depth. The `Skill` tool, a subagent
+prompt and an MCP `repo` argument are caught by name. `session_audit.py` applies the same
+name check to a recorded session. Limits (the sandbox tier is what closes them): a name built at
+run time (`printf`, `base64`, string slicing, a variable set in an earlier call), a script file
+that does the read for the agent, a copy made earlier by a role that may read the original, a
+recursive search rooted more than four levels above a blocked directory (the depth limit is the one
+cap that allows), a workspace policy file the implementer can itself rewrite (the built-in names and
+blank-role handling hold, but a policy that adds a real role name to `authorized_roles` is
+believed), and a case-insensitive filesystem alias that differs by more than case.
+
+Every other cap fails closed: when the directory scan runs out of its 3,000-entry budget, a glob
+matches more than 5,000 paths, brace expansion exceeds 32 words, shell strings nest more than three
+deep, or the check itself errors, the implementer is denied with a message to give a narrower
+path (investigator and verifier are unaffected). A Grep or Glob call with only a pattern is
+checked against the working directory like a bare `grep -r pat`; an argument of a tool the hook
+has no table for that names a path on disk is resolved like a path. `git`, `cargo` and `make` are
+not treated as reading a directory argument (`git grep` still is).
+
+One false positive is chosen, not accidental: a shell command line is judged whole, so a commit
+message or heredoc that names a firewalled skill is denied (the same words written through a
+file-edit tool are exempt, as ever). Write "the dirty-side skills" instead. A glob that could
+match both a blocked and an allowed name (`hardware-specs-*`) is judged by what it matches on
+disk, so it is allowed when only the allowed repositories exist.
 
 **Role scoping (important):** hooks apply to *every* session in the workspace — including the dirty
 side, which *must* read source. Investigator and verifier processes therefore run with

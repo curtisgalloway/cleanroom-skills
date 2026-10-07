@@ -57,6 +57,28 @@ Mostly decisions that look like bugs until you know why they are there:
   `file_path`), case-folded. That lets one hook survive Antigravity's PascalCase
   arguments, its renames between releases, and MCP tools nobody anticipated.
 
+- **`TestFirewallByName`** / **`TestFirewallWithoutNamingThePath`** (LS-R18) — the
+  implementer is denied `board-expert`, `hardware-investigator`, `cleanroom-investigator` and
+  `hardware-specs-gpl` by name, and the investigator and verifier roles are allowed and logged,
+  across path, command, search, Skill-tool, subagent-prompt and MCP-argument forms. The second
+  class builds a workspace on disk (a skills directory, a spec checkout, symlinks into both) and
+  checks reads that never write the name: symlinks, globs, `cd` then a relative read, `$VAR`,
+  quoting, braces, nested `sh -c`, and recursive searches from an ancestor. Its allow cases pin
+  what must stay readable (`ls`, other skills, ordinary source). `test_a_custom_policy_cannot_drop_the_firewall`
+  pins that the names are built in, not a policy key.
+- **`TestFirewallReviewFindings`** — cases the review-swarm found in the first version:
+  assignments after `export`/`declare`, a mid-word `#`, a glob with more matches than the
+  filesystem cap, a glob that matches only allowed siblings, a blank role or a null list in a
+  workspace policy, and the chosen false positive (a command line naming a skill is denied).
+- **`TestFirewallFailsClosedOnLimits`** / **`TestFirewallFormParity`** — the commit security
+  review: each cap that truncates the check (scan entries, glob matches, brace words, nesting,
+  an internal error) denies the implementer and not the investigator, with a "narrower path"
+  message (these patch the module's constants in-process); and the same target is judged the same
+  in every form (pattern-only Grep/Glob scan the working directory, an unknown argument that is
+  a symlink is resolved, sibling names are denied alike in path, command, search and repo forms).
+- `firewall_session.jsonl` — a Claude Code record that reads `board-expert`, loads
+  `hardware-investigator` and clones `hardware-specs-gpl`; the audit must flag all three.
+
 Also pinned:
 
 - Role scoping allows *and still logs*. The log is the evidentiary record, so an

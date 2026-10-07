@@ -27,8 +27,8 @@ notice does not — that's why the rules live here too.
 - Ported-driver specs (`docs/<device>-spec.md`) plus their cited public references
   (`docs/references/`) are the ONLY implementation inputs for those drivers.
 - Never read, fetch, search for, or clone Linux / U-Boot / TF-A / vendor-firmware source, never
-  ask a subagent to, and never load the dirty-side skills (`cleanroom-investigator`, board-experts) as an
-  implementer. Only designated dirty-side processes (cleanroom-investigator / verifier, running with
+  ask a subagent to, and never load the dirty-side skills (`cleanroom-investigator`, `board-expert`,
+  `hardware-investigator`) or read the `hardware-specs-gpl` checkout as an implementer. Only designated dirty-side processes (cleanroom-investigator / verifier, running with
   `CLEANROOM_ROLE` set) touch encumbered source.
 - Spec insufficient? Append `- [open] <date> <section> <question>` to
   `docs/spec-gaps/<device>.md`, mark the code site `TODO(spec-gap)`, and continue with other

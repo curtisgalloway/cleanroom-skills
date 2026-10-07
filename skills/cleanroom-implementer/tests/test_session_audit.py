@@ -181,5 +181,22 @@ class TestAntigravityArtifacts(unittest.TestCase):
         self.assertIn("MODULE_LICENSE", out)
 
 
+class TestFirewallByName(unittest.TestCase):
+    """LS-R18 on the detection side: a session that read a firewalled skill
+    or spec checkout is flagged, hook or no hook."""
+
+    def test_session_that_read_board_expert_is_flagged(self):
+        rc, out = run_audit(FIX / "firewall_session.jsonl")
+        self.assertEqual(rc, 1, out)
+        self.assertIn("Read matched 'name:board-expert'", out)
+        self.assertIn("Skill matched 'name:hardware-investigator'", out)
+        self.assertIn("Bash matched 'name:hardware-specs-gpl'", out)
+        self.assertNotIn("File contents elided", out)
+
+    def test_clean_session_still_passes(self):
+        rc, out = run_audit(FIX / "clean_session.jsonl")
+        self.assertEqual(rc, 0, out)
+
+
 if __name__ == "__main__":
     unittest.main()

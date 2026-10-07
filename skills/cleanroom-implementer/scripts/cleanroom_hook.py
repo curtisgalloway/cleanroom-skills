@@ -57,6 +57,20 @@ working directory walked up to the nearest harness config dir.
 Policy: $CLEANROOM_POLICY, then <project>/{.agents,.agent,.gemini,.claude}/
 cleanroom-policy.json, then built-in defaults.
 
+FIREWALL BY NAME (LS-R18). Independently of the policy file, the implementer is
+denied the dirty-side skills (board-expert, hardware-investigator,
+cleanroom-investigator) and the GPL spec repository (hardware-specs-gpl),
+however installed: plugin cache, linked checkout, symlink, a clone under any
+directory. The names are built into this script, so a workspace policy that
+omits them cannot switch the firewall off; a policy may ADD names under
+"blocked_names". Matching is by NAME, case-folded, over the target text and,
+where the filesystem is visible, over what the target resolves to (symlinks,
+"..", globs, variables, "cd" then a relative read, a recursive search rooted
+above a blocked directory). hardware-specs-docs and hardware-specs-permissive
+are allowed to the implementer by design. See the limits listed in the
+cleanroom-implementer skill: a shell can always build a name this script
+cannot see, which is what the sandbox tier is for.
+
 Written/edited CONTENT is deliberately not scanned (a doc comment mentioning
 "trusted-firmware-a" must not block the edit); content-level leaks are the
 job of session_audit.py and the pre-merge output scan.
@@ -64,10 +78,16 @@ job of session_audit.py and the pre-merge output scan.
 Never breaks the session: malformed input or logging failure -> allow.
 """
 
+import fnmatch
+import glob
+import itertools
 import json
 import os
+import re
+import shlex
 import sys
 import time
+import urllib.parse
 
 DEFAULT_POLICY = {
     "checkout_roots": [
@@ -89,10 +109,58 @@ DEFAULT_POLICY = {
         "git.trustedfirmware.org", "review.trustedfirmware.org",
         "sources.debian.org/src/linux",
     ],
+    "blocked_names": [],
     "authorized_roles": ["investigator", "verifier"],
     "log_file": "docs/provenance/hook-blocks.jsonl",
     "gap_hint": "docs/spec-gaps/<device>.md",
 }
+
+# LS-R18: names the implementer may never read, built in on purpose (see the
+# module docstring). The policy's "blocked_names" only adds to these.
+FIREWALL_NAMES = (
+    "board-expert", "hardware-investigator", "cleanroom-investigator",
+    "hardware-specs-gpl",
+)
+
+# Keys whose value is a working directory: a base for relative paths, not a
+# directory being searched.
+CWD_KEYS = {"cwd", "workdir", "workingdirectory"}
+
+# Commands that do not read the contents of a directory argument. Every other
+# command that is handed an existing directory is treated as able to read
+# everything under it. Names are still checked for these.
+NO_SCAN_COMMANDS = {
+    "ls", "cd", "pushd", "popd", "pwd", "echo", "printf", "mkdir", "test",
+    "[", "stat", "true", "false", "export", "unset",
+    # Version control and build tools take "." as a project argument all the
+    # time; they are not how a tree is read for content (git grep is a search
+    # tool and is caught as one).
+    "git", "cargo", "make",
+}
+
+# Recursive search tools: with no path argument they read the working
+# directory.
+SEARCH_TOOLS = {"grep", "egrep", "fgrep", "rg", "ag", "ack", "find", "fd",
+                "fdfind", "tree", "locate"}
+
+# Bound on filesystem work per tool call: a hook must stay fast.
+# SCAN_DEPTH is a documented limit (deeper than that is not looked at). The
+# other caps FAIL CLOSED: when one truncates what the firewall can check, the
+# implementer is denied and told to narrow the call (_LimitExceeded).
+SCAN_DEPTH = 4
+SCAN_ENTRIES = 3000
+GLOB_NAMES = 5000
+BRACE_RESULTS = 32
+NESTING = 3
+
+# Argument keys that mark a tool call as a search over files. A call with
+# one of these and no path of its own reads the working directory.
+SEARCH_ARG_KEYS = {"pattern", "query", "regex", "glob", "search", "searchterm",
+                   "search_term", "q", "include", "includes"}
+
+
+class _LimitExceeded(Exception):
+    """A cap truncated what the firewall can check; the call is denied."""
 
 # Harness config directories, in policy-resolution order: Antigravity
 # workspace, Antigravity rules, shared ~/.gemini layout, Claude Code.
@@ -153,6 +221,29 @@ def project_dir(cwd_hint=None):
     return _find_root(os.getcwd())
 
 
+LIST_KEYS = ("checkout_roots", "blocked_path_patterns", "blocked_url_patterns",
+             "blocked_names", "authorized_roles")
+
+
+def _sanitize(pol):
+    """Keep a malformed workspace policy from crashing the hook or opening it.
+
+    The implementer can write a workspace policy file. A list key that is not
+    a list of strings falls back to the built-in default (a crash would exit 1,
+    which is not a block on every harness), and a blank entry in
+    authorized_roles is dropped: the unset role is the empty string, so a
+    blank entry would authorize every implementer.
+    """
+    for key in LIST_KEYS:
+        val = pol.get(key)
+        if not isinstance(val, list) or not all(isinstance(v, str)
+                                                for v in val):
+            pol[key] = list(DEFAULT_POLICY[key])
+    pol["authorized_roles"] = [r.strip().lower() for r in
+                               pol["authorized_roles"] if r.strip()]
+    return pol
+
+
 def load_policy(cwd_hint=None):
     root = project_dir(cwd_hint)
     candidates = [os.environ.get("CLEANROOM_POLICY")]
@@ -166,10 +257,10 @@ def load_policy(cwd_hint=None):
                 with open(cand, encoding="utf-8") as f:
                     pol = dict(DEFAULT_POLICY)
                     pol.update(json.load(f))
-                    return pol
+                    return _sanitize(pol)
             except Exception:
                 pass
-    return dict(DEFAULT_POLICY)
+    return _sanitize(dict(DEFAULT_POLICY))
 
 
 def norm(s):
@@ -197,6 +288,284 @@ def match(text, pol, use_paths=True, use_urls=True, use_roots=True):
     return None
 
 
+def _firewall_names(pol):
+    extra = pol.get("blocked_names") or []
+    if not isinstance(extra, list):
+        extra = []
+    return FIREWALL_NAMES + tuple(norm(n) for n in extra if n)
+
+
+def _name_in(text, names):
+    """First firewalled name in `text` (case-folded, URL-decoded), or None."""
+    t = norm(text)
+    forms = [t]
+    if "%" in t:
+        forms.append(norm(urllib.parse.unquote(t)))
+    for form in forms:
+        for n in names:
+            if n in form:
+                return n
+    return None
+
+
+def _expand_vars(text, env):
+    def sub(m):
+        key = m.group(1) or m.group(2)
+        if key in env:
+            return env[key]
+        return os.environ.get(key, m.group(0))
+    return re.sub(r"\$(?:(\w+)|\{(\w+)\})", sub, text)
+
+
+def _braces(word):
+    """Expand one level of {a,b} groups, bounded; the word itself if none."""
+    out = [word]
+    for _ in range(3):
+        nxt = []
+        changed = False
+        for w in out:
+            m = re.search(r"\{([^{}]*,[^{}]*)\}", w)
+            if not m:
+                nxt.append(w)
+                continue
+            changed = True
+            for alt in m.group(1).split(","):
+                nxt.append(w[:m.start()] + alt + w[m.end():])
+        if len(nxt) > BRACE_RESULTS:
+            raise _LimitExceeded("brace expansion")
+        out = nxt
+        if not changed:
+            break
+    return out
+
+
+class _Scan:
+    """Shared filesystem budget for one tool call."""
+
+    def __init__(self):
+        self.entries = SCAN_ENTRIES
+
+
+def _scan_dir(root, names, budget):
+    """Find a firewalled name under `root`, to a bounded depth and size.
+
+    Looks at entry names and at where symlinks point; does not descend
+    through symlinks. Returns the name or None. Raises _LimitExceeded when the
+    entry budget runs out (the depth limit is a documented limit instead).
+    """
+    stack = [(root, 0)]
+    while stack:
+        cur, level = stack.pop()
+        try:
+            entries = os.listdir(cur)
+        except OSError:
+            continue
+        for entry in entries:
+            budget.entries -= 1
+            if budget.entries < 0:
+                raise _LimitExceeded("directory scan")
+            full = os.path.join(cur, entry)
+            hit = _name_in(entry, names)
+            if hit:
+                return hit
+            if os.path.islink(full):
+                hit = _name_in(os.path.realpath(full), names)
+                if hit:
+                    return hit
+            elif level < SCAN_DEPTH and os.path.isdir(full):
+                stack.append((full, level + 1))
+    return None
+
+
+def _glob_component_hit(token, names):
+    """A glob component that could only mean a firewalled name.
+
+    Requires three literal characters so that "*" or "b*" does not block
+    every listing; those are caught instead by expanding on disk.
+    """
+    for comp in norm(token).split("/"):
+        if not any(c in comp for c in "*?["):
+            continue
+        if len([c for c in comp if c not in "*?[]"]) < 3:
+            continue
+        for n in names:
+            if fnmatch.fnmatchcase(n, comp):
+                return n
+    return None
+
+
+def _check_token(token, names, base, env, scan, budget):
+    """Check one path-like token. Returns (hit_name_or_None, exists)."""
+    tok = _expand_vars(token, env)
+    tok = os.path.expanduser(tok)
+    if tok.startswith("file://"):
+        tok = tok[len("file://"):]
+    hit = _name_in(tok, names)
+    if not hit and base is None:
+        # No filesystem to expand against: a glob that could only mean a
+        # firewalled name is judged by its pattern. With a filesystem the
+        # expansion below decides, so "hardware-specs-*" still reads the
+        # allowed sibling repositories.
+        hit = _glob_component_hit(tok, names)
+    if hit or base is None or not tok:
+        return hit, False
+    if "%" in tok:
+        tok = urllib.parse.unquote(tok)
+    full = tok if os.path.isabs(tok) else os.path.join(base, tok)
+    if any(c in tok for c in "*?["):
+        cands = sorted(itertools.islice(glob.iglob(full), GLOB_NAMES + 1))
+        if len(cands) > GLOB_NAMES:
+            raise _LimitExceeded("glob expansion")
+        for cand in cands:
+            hit = _name_in(cand, names)
+            if hit:
+                return hit, True
+    else:
+        cands = [full]
+    exists = False
+    for cand in cands:
+        if not os.path.lexists(cand):
+            continue
+        exists = True
+        real = os.path.realpath(cand)
+        hit = _name_in(real, names)
+        if hit:
+            return hit, True
+        if scan and os.path.isdir(real):
+            hit = _scan_dir(real, names, budget)
+            if hit:
+                return hit, True
+    return None, exists
+
+
+def _segments(command):
+    """Split a command line into segments of shell words.
+
+    Quotes, backslashes and $( ) / backtick boundaries are handled by the
+    tokenizer, so a name split by quotes or an escape comes out whole.
+    """
+    text = command.replace("\n", " ; ").replace("`", " ; ")
+    try:
+        lex = shlex.shlex(text, posix=True, punctuation_chars=True)
+        lex.whitespace_split = True
+        lex.commenters = ""  # a mid-word # is not a comment to the shell
+        words = list(lex)
+    except ValueError:
+        words = re.split(r"[\s'\"]+", text)
+    segs, cur = [], []
+    for w in words:
+        if w and all(c in ";&|()" for c in w):
+            if cur:
+                segs.append(cur)
+            cur = []
+        elif w and all(c in "<>" for c in w):
+            continue
+        elif w:
+            cur.append(w)
+    if cur:
+        segs.append(cur)
+    return segs
+
+
+ASSIGN_BUILTINS = {"export", "declare", "local", "readonly", "typeset"}
+
+
+def _record_assignments(words, env):
+    """Record leading NAME=value words, also after export/declare/etc.
+
+    Returns the words left once the assignments (and the builtin that
+    introduced them) are consumed.
+    """
+    while words:
+        if re.match(r"[A-Za-z_]\w*=", words[0]):
+            key, _, val = words[0].partition("=")
+            env[key] = _expand_vars(val, env)
+            words = words[1:]
+        elif (os.path.basename(words[0]) in ASSIGN_BUILTINS and
+              len(words) > 1):
+            words = words[1:]
+            while words and words[0].startswith("-"):
+                words = words[1:]
+        else:
+            break
+    return words
+
+
+def _firewall_command(command, names, base, env, budget, depth=0):
+    hit = _name_in(command, names)
+    if hit:
+        return hit
+    cur = base
+    for words in _segments(command):
+        words = _record_assignments(words, env)
+        if not words:
+            continue
+        head = os.path.basename(words[0]).lower()
+        searches = any(os.path.basename(w).lower() in SEARCH_TOOLS
+                       for w in words)
+        scan = head not in NO_SCAN_COMMANDS or searches
+        any_exists = False
+        for word in words:
+            for variant in _braces(word):
+                pieces = [variant]
+                if variant.startswith("-") and "=" in variant:
+                    pieces = [variant.partition("=")[2]]
+                elif variant.startswith("-"):
+                    continue
+                for piece in pieces:
+                    if re.search(r"[\s;|&]|\$\(", piece):
+                        if depth >= NESTING:
+                            raise _LimitExceeded("nested shell strings")
+                        hit = _firewall_command(piece, names, cur, env,
+                                                budget, depth + 1)
+                        if hit:
+                            return hit
+                    hit, exists = _check_token(
+                        piece, names, cur, env, scan, budget)
+                    if hit:
+                        return hit
+                    any_exists = any_exists or (
+                        exists and piece is not words[0])
+        if head in ("cd", "pushd") and cur is not None and len(words) > 1:
+            target = os.path.expanduser(_expand_vars(words[1], env))
+            full = target if os.path.isabs(target) else os.path.join(
+                cur, target)
+            if os.path.isdir(full):
+                cur = os.path.realpath(full)
+        elif searches and not any_exists and cur is not None:
+            hit = _scan_dir(cur, names, budget)
+            if hit:
+                return hit
+    return None
+
+
+def firewall_hit(key, text, pol, base=None, scan_dirs=True, budget=None):
+    """Name-based firewall check for one argument. Returns 'name:<n>' or None.
+
+    `base` is the directory relative paths resolve against; None means the
+    filesystem is not consulted (the audit of a record from another machine).
+    Path keys and command keys get the full treatment; any other key is
+    matched on the name alone, which is what stops the Skill tool, a subagent
+    prompt and a repository argument from naming a firewalled target.
+    """
+    names = _firewall_names(pol)
+    budget = budget or _Scan()
+    if key in COMMAND_KEYS:
+        hit = _firewall_command(text, names, base, {}, budget)
+    elif key in PATH_KEYS:
+        hit, _ = _check_token(text, names, base, {},
+                              scan_dirs and key not in CWD_KEYS, budget)
+    else:
+        hit = _name_in(text, names)
+        if (not hit and base is not None and len(text) < 1024 and
+                not re.search(r"\s", text)):
+            # An argument of a tool the hook has no table for may still be a
+            # path (a symlink to a firewalled directory, say): resolve it the
+            # way a path key is, without scanning below it.
+            hit, _ = _check_token(text, names, base, {}, False, budget)
+    return f"name:{hit}" if hit else None
+
+
 def _strings(node, key=None):
     """Yield (case-folded key, string) for every string leaf in a tree."""
     if isinstance(node, str):
@@ -209,30 +578,61 @@ def _strings(node, key=None):
             yield from _strings(v, key)
 
 
-def pick_target(tool, tool_input, pol):
+def pick_target(tool, tool_input, pol, cwd=None):
     """Return (target_text, matched_pattern_or_None) for this tool call.
 
     Keyed on argument names, not tool names, so one policy covers
     Antigravity's vocabulary (and PascalCase), MCP tools, and whatever a
     future build renames.
+
+    `cwd` is the directory the call runs in. With it, the firewall also
+    follows symlinks, globs and relative reads on disk; without it (the
+    session audit) it matches names in the text only.
     """
+    base = cwd
+    if base is not None:
+        for key, text in _strings(tool_input):
+            if key in CWD_KEYS and text:
+                full = os.path.expanduser(text)
+                if not os.path.isabs(full):
+                    full = os.path.join(base, full)
+                if os.path.isdir(full):
+                    base = os.path.realpath(full)
+                    hit = _name_in(base, _firewall_names(pol))
+                    if hit:
+                        return text, f"name:{hit}"
+                break
+    budget = _Scan()
     first = ""
-    for key, text in _strings(tool_input):
-        if not text:
-            continue
-        if not first:
-            first = text
-        if key in CONTENT_KEYS:
-            continue
-        if key in PATH_KEYS or key in COMMAND_KEYS:
-            hit = match(text, pol)
-        else:
-            # Unknown keys (search queries, prompts carrying URLs, MCP
-            # arguments): URLs and checkout roots only. Path patterns over
-            # arbitrary prose would false-positive.
-            hit = match(text, pol, use_paths=False)
-        if hit:
-            return text, hit
+    try:
+        has_path = searches = False
+        for key, text in _strings(tool_input):
+            if not text:
+                continue
+            if not first:
+                first = text
+            if key in CONTENT_KEYS:
+                continue
+            if key in PATH_KEYS or key in COMMAND_KEYS:
+                hit = match(text, pol)
+                has_path = has_path or (key not in CWD_KEYS)
+            else:
+                # Unknown keys (search queries, prompts carrying URLs, MCP
+                # arguments): URLs and checkout roots only. Path patterns
+                # over arbitrary prose would false-positive.
+                hit = match(text, pol, use_paths=False)
+                searches = searches or key in SEARCH_ARG_KEYS
+            hit = hit or firewall_hit(key, text, pol, base, budget=budget)
+            if hit:
+                return text, hit
+        if searches and not has_path and base is not None:
+            # Grep/Glob style call with a pattern and no path: it reads the
+            # working directory, exactly as a bare `grep -r pat` does.
+            hit = _scan_dir(base, _firewall_names(pol), budget)
+            if hit:
+                return first, f"name:{hit}"
+    except _LimitExceeded as exc:
+        return first, f"limit:{exc}"
     return first, None
 
 
@@ -330,7 +730,11 @@ def main():
         allow()
     tool, args, cwd_hint, session, extra = parse_event(data)
     pol = load_policy(cwd_hint)
-    target, hit = pick_target(tool, args, pol)
+    try:
+        target, hit = pick_target(tool, args, pol,
+                                  cwd=cwd_hint or os.getcwd())
+    except Exception as exc:  # fail closed: an unreadable call is not allowed
+        target, hit = "", f"limit:internal error ({type(exc).__name__})"
     if not hit:
         allow()
 
@@ -351,9 +755,19 @@ def main():
     if authorized:
         allow()
 
+    if hit.startswith("limit:"):
+        deny(
+            f"cleanroom: BLOCKED {tool} - {hit[len('limit:'):]} is too broad "
+            f"for the firewall to verify. Give a narrower path (a specific "
+            f"directory or file in your workspace) and try again. This "
+            f"attempt was logged.")
+    what = ("Encumbered source (Linux/U-Boot/TF-A/vendor firmware), the "
+            "dirty-side skills (board-expert, hardware-investigator, "
+            "cleanroom-investigator) and the GPL spec repository "
+            "(hardware-specs-gpl) are")
     deny(
-        f"cleanroom: BLOCKED {tool} - target matches '{hit}'. Encumbered "
-        f"source (Linux/U-Boot/TF-A/vendor firmware) is off-limits in "
+        f"cleanroom: BLOCKED {tool} - target matches '{hit}'. {what} "
+        f"off-limits in "
         f"implementation sessions. If the spec is insufficient, append the "
         f"question to {pol.get('gap_hint')} as '- [open] <date> <section> "
         f"<question>', mark the code site TODO(spec-gap), and continue with "
