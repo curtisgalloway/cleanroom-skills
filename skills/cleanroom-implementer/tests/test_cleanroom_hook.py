@@ -716,5 +716,164 @@ class TestFirewallReviewFindings(HookCase):
         self.assertEqual(rc, 2, err)
 
 
+def load_hook_module():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("cleanroom_hook_under_test",
+                                                  HOOK)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+class TestFirewallFailsClosedOnLimits(unittest.TestCase):
+    """A cap that truncates what the firewall can check must deny the
+    implementer (and say how to narrow the call), not allow."""
+
+    def setUp(self):
+        self.hook = load_hook_module()
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.root = pathlib.Path(self._tmp.name).resolve()
+        (self.root / "d").mkdir()
+        for i in range(20):
+            (self.root / "d" / f"f{i:02d}.txt").write_text("x\n")
+        self.pol = dict(self.hook.DEFAULT_POLICY)
+
+    def pick(self, command):
+        return self.hook.pick_target(
+            "run_command", {"CommandLine": command}, self.pol,
+            cwd=str(self.root))
+
+    def test_scan_budget_exhausted_is_a_deny(self):
+        self.hook.SCAN_ENTRIES = 5
+        _, hit = self.pick("grep -r x d")
+        self.assertTrue(hit and hit.startswith("limit:"), hit)
+
+    def test_scan_budget_not_exhausted_is_clean(self):
+        _, hit = self.pick("grep -r x d")
+        self.assertIsNone(hit)
+
+    def test_glob_name_cap_is_a_deny(self):
+        self.hook.GLOB_NAMES = 5
+        _, hit = self.pick("cat d/*.txt")
+        self.assertTrue(hit and hit.startswith("limit:"), hit)
+
+    def test_brace_cap_is_a_deny(self):
+        self.hook.BRACE_RESULTS = 3
+        _, hit = self.pick("cat {a,b,c,d,e}.txt")
+        self.assertTrue(hit and hit.startswith("limit:"), hit)
+
+    def test_nesting_cap_is_a_deny(self):
+        import shlex
+        cmd = "cat d/f00.txt"
+        for _ in range(self.hook.NESTING + 2):
+            cmd = "sh -c " + shlex.quote(cmd)
+        _, hit = self.pick(cmd)
+        self.assertTrue(hit and hit.startswith("limit:"), hit)
+
+    def run_main(self, role=None):
+        import contextlib
+        import io
+        event = {"toolCall": {"name": "run_command",
+                              "args": {"CommandLine": "grep -r x d"}},
+                 "workspacePaths": [str(self.root)]}
+        env = {"CLEANROOM_PROJECT_DIR": str(self.root)}
+        if role:
+            env["CLEANROOM_ROLE"] = role
+        old_env = dict(os.environ)
+        os.environ.pop("CLEANROOM_ROLE", None)
+        os.environ.update(env)
+        err, out = io.StringIO(), io.StringIO()
+        old_in = sys.stdin
+        sys.stdin = io.StringIO(json.dumps(event))
+        try:
+            with contextlib.redirect_stderr(err), \
+                    contextlib.redirect_stdout(out):
+                try:
+                    self.hook.main()
+                except SystemExit as e:
+                    code = e.code
+        finally:
+            sys.stdin = old_in
+            os.environ.clear()
+            os.environ.update(old_env)
+        return code, err.getvalue(), out.getvalue()
+
+    def test_deny_message_says_to_narrow_the_path(self):
+        self.hook.SCAN_ENTRIES = 5
+        code, err, _ = self.run_main()
+        self.assertEqual(code, 2, err)
+        self.assertIn("narrower path", err)
+
+    def test_investigator_is_unaffected_by_the_limit(self):
+        self.hook.SCAN_ENTRIES = 5
+        code, err, out = self.run_main(role="investigator")
+        self.assertEqual(code, 0, err)
+        self.assertEqual(json.loads(out), ALLOW)
+
+    def test_unexpected_error_in_the_check_is_a_deny(self):
+        def boom(*a, **k):
+            raise RuntimeError("boom")
+        self.hook.pick_target = boom
+        code, err, _ = self.run_main()
+        self.assertEqual(code, 2, err)
+
+
+class TestFirewallFormParity(HookCase):
+    """The same target is judged the same way whichever form carries it."""
+
+    def deny(self, tool, args, **kw):
+        rc, err, _ = self.fire(tool, args, setup=make_tree, **kw)
+        self.assertEqual(rc, 2, f"{tool} {args}: {err}")
+
+    def allow(self, tool, args, **kw):
+        rc, err, log = self.fire(tool, args, setup=make_tree, **kw)
+        self.assertEqual(rc, 0, f"{tool} {args}: {err}")
+        self.assertEqual(log, [])
+
+    def test_pattern_only_search_tools_scan_the_working_directory(self):
+        """Grep and Glob with no path read the working directory, as a bare
+        `grep -r pat` does."""
+        self.deny("grep_search", {"Query": "reset"})
+        self.deny("Grep", {"pattern": "reset"})
+        self.deny("Glob", {"pattern": "**/*.md"})
+        self.deny("Grep", {"pattern": "reset", "glob": "*.md"})
+
+    def test_pattern_only_search_with_a_path_uses_that_path(self):
+        self.allow("grep_search", {"Query": "reset", "SearchDirectory": "src"})
+        self.allow("Grep", {"pattern": "reset", "path": "src"})
+        self.deny("Grep", {"pattern": "reset", "path": "skills"})
+
+    def test_pattern_only_search_in_a_clean_workspace_is_allowed(self):
+        rc, err, log = self.fire("grep_search", {"Query": "reset"})
+        self.assertEqual(rc, 0, err)
+        self.assertEqual(log, [])
+
+    def test_pattern_only_search_follows_a_cwd_argument(self):
+        self.deny("Grep", {"pattern": "reset", "cwd": "refs"})
+        self.allow("Grep", {"pattern": "reset", "cwd": "src"})
+
+    def test_unknown_argument_key_that_is_a_symlink_is_resolved(self):
+        self.deny("mcp__fs__open", {"location": "refs"})
+        self.deny("mcp__fs__open", {"uri": "gpl/specs/x.md"})
+        self.allow("mcp__fs__open", {"location": "src/main.rs"})
+
+    def test_siblings_of_a_blocked_name_are_judged_alike_in_every_form(self):
+        for name in ("board-expert-notes", "hardware-specs-gpl-main",
+                     "x-board-expert", "hardware-specs-gpl.git"):
+            with self.subTest(name=name):
+                self.deny("view_file", {"TargetFile": f"/a/{name}/f"})
+                self.deny("run_command", {"CommandLine": f"cat /a/{name}/f"})
+                self.deny("grep_search", {"Query": "x",
+                                          "SearchDirectory": f"/a/{name}"})
+                self.deny("mcp__git__get", {"repo": name})
+
+    def test_build_and_version_control_commands_do_not_scan_a_directory(self):
+        self.allow("run_command", {"CommandLine": "git -C . status"})
+        self.allow("run_command", {"CommandLine": "git add ."})
+        self.allow("run_command", {"CommandLine": "cargo build --manifest-path ."})
+        self.deny("run_command", {"CommandLine": "git grep reset ."})
+
+
 if __name__ == "__main__":
     unittest.main()

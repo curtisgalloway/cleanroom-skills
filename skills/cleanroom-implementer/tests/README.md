@@ -70,6 +70,12 @@ Mostly decisions that look like bugs until you know why they are there:
   assignments after `export`/`declare`, a mid-word `#`, a glob with more matches than the
   filesystem cap, a glob that matches only allowed siblings, a blank role or a null list in a
   workspace policy, and the chosen false positive (a command line naming a skill is denied).
+- **`TestFirewallFailsClosedOnLimits`** / **`TestFirewallFormParity`** — the commit security
+  review: each cap that truncates the check (scan entries, glob matches, brace words, nesting,
+  an internal error) denies the implementer and not the investigator, with a "narrower path"
+  message (these patch the module's constants in-process); and the same target is judged the same
+  in every form (pattern-only Grep/Glob scan the working directory, an unknown argument that is
+  a symlink is resolved, sibling names are denied alike in path, command, search and repo forms).
 - `firewall_session.jsonl` — a Claude Code record that reads `board-expert`, loads
   `hardware-investigator` and clones `hardware-specs-gpl`; the audit must flag all three.
 

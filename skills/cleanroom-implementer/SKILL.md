@@ -196,12 +196,18 @@ prompt and an MCP `repo` argument are caught by name. `session_audit.py` applies
 name check to a recorded session. Limits (the sandbox tier is what closes them): a name built at
 run time (`printf`, `base64`, string slicing, a variable set in an earlier call), a script file
 that does the read for the agent, a copy made earlier by a role that may read the original, a
-recursive search rooted more than four levels above or in a tree of more than 3,000 entries, a
-non-shell search tool (Grep, Glob) called with only a pattern and no path, which defaults to the
-working directory and is never checked against it (a shell command running a search tool with no
-path is), a workspace policy file the implementer can itself rewrite (the built-in names and
+recursive search rooted more than four levels above a blocked directory (the depth limit is the one
+cap that allows), a workspace policy file the implementer can itself rewrite (the built-in names and
 blank-role handling hold, but a policy that adds a real role name to `authorized_roles` is
 believed), and a case-insensitive filesystem alias that differs by more than case.
+
+Every other cap fails closed: when the directory scan runs out of its 3,000-entry budget, a glob
+matches more than 5,000 paths, brace expansion exceeds 32 words, shell strings nest more than three
+deep, or the check itself errors, the implementer is denied with a message to give a narrower
+path (investigator and verifier are unaffected). A Grep or Glob call with only a pattern is
+checked against the working directory like a bare `grep -r pat`; an argument of a tool the hook
+has no table for that names a path on disk is resolved like a path. `git`, `cargo` and `make` are
+not treated as reading a directory argument (`git grep` still is).
 
 One false positive is chosen, not accidental: a shell command line is judged whole, so a commit
 message or heredoc that names a firewalled skill is denied (the same words written through a

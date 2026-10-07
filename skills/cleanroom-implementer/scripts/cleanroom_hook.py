@@ -132,6 +132,10 @@ CWD_KEYS = {"cwd", "workdir", "workingdirectory"}
 NO_SCAN_COMMANDS = {
     "ls", "cd", "pushd", "popd", "pwd", "echo", "printf", "mkdir", "test",
     "[", "stat", "true", "false", "export", "unset",
+    # Version control and build tools take "." as a project argument all the
+    # time; they are not how a tree is read for content (git grep is a search
+    # tool and is caught as one).
+    "git", "cargo", "make",
 }
 
 # Recursive search tools: with no path argument they read the working
@@ -140,12 +144,23 @@ SEARCH_TOOLS = {"grep", "egrep", "fgrep", "rg", "ag", "ack", "find", "fd",
                 "fdfind", "tree", "locate"}
 
 # Bound on filesystem work per tool call: a hook must stay fast.
+# SCAN_DEPTH is a documented limit (deeper than that is not looked at). The
+# other caps FAIL CLOSED: when one truncates what the firewall can check, the
+# implementer is denied and told to narrow the call (_LimitExceeded).
 SCAN_DEPTH = 4
 SCAN_ENTRIES = 3000
-GLOB_RESULTS = 200   # matches resolved on disk (realpath, directory scan)
-GLOB_NAMES = 5000    # matches checked by name only
+GLOB_NAMES = 5000
 BRACE_RESULTS = 32
 NESTING = 3
+
+# Argument keys that mark a tool call as a search over files. A call with
+# one of these and no path of its own reads the working directory.
+SEARCH_ARG_KEYS = {"pattern", "query", "regex", "glob", "search", "searchterm",
+                   "search_term", "q", "include", "includes"}
+
+
+class _LimitExceeded(Exception):
+    """A cap truncated what the firewall can check; the call is denied."""
 
 # Harness config directories, in policy-resolution order: Antigravity
 # workspace, Antigravity rules, shared ~/.gemini layout, Claude Code.
@@ -316,7 +331,9 @@ def _braces(word):
             changed = True
             for alt in m.group(1).split(","):
                 nxt.append(w[:m.start()] + alt + w[m.end():])
-        out = nxt[:BRACE_RESULTS]
+        if len(nxt) > BRACE_RESULTS:
+            raise _LimitExceeded("brace expansion")
+        out = nxt
         if not changed:
             break
     return out
@@ -333,8 +350,8 @@ def _scan_dir(root, names, budget):
     """Find a firewalled name under `root`, to a bounded depth and size.
 
     Looks at entry names and at where symlinks point; does not descend
-    through symlinks. Returns the name or None (also None when the budget ran
-    out: a limit, listed in the skill).
+    through symlinks. Returns the name or None. Raises _LimitExceeded when the
+    entry budget runs out (the depth limit is a documented limit instead).
     """
     stack = [(root, 0)]
     while stack:
@@ -346,7 +363,7 @@ def _scan_dir(root, names, budget):
         for entry in entries:
             budget.entries -= 1
             if budget.entries < 0:
-                return None
+                raise _LimitExceeded("directory scan")
             full = os.path.join(cur, entry)
             hit = _name_in(entry, names)
             if hit:
@@ -396,12 +413,13 @@ def _check_token(token, names, base, env, scan, budget):
         tok = urllib.parse.unquote(tok)
     full = tok if os.path.isabs(tok) else os.path.join(base, tok)
     if any(c in tok for c in "*?["):
-        cands = sorted(itertools.islice(glob.iglob(full), GLOB_NAMES))
+        cands = sorted(itertools.islice(glob.iglob(full), GLOB_NAMES + 1))
+        if len(cands) > GLOB_NAMES:
+            raise _LimitExceeded("glob expansion")
         for cand in cands:
             hit = _name_in(cand, names)
             if hit:
                 return hit, True
-        cands = cands[:GLOB_RESULTS]
     else:
         cands = [full]
     exists = False
@@ -483,9 +501,9 @@ def _firewall_command(command, names, base, env, budget, depth=0):
         if not words:
             continue
         head = os.path.basename(words[0]).lower()
-        scan = head not in NO_SCAN_COMMANDS
         searches = any(os.path.basename(w).lower() in SEARCH_TOOLS
                        for w in words)
+        scan = head not in NO_SCAN_COMMANDS or searches
         any_exists = False
         for word in words:
             for variant in _braces(word):
@@ -495,8 +513,9 @@ def _firewall_command(command, names, base, env, budget, depth=0):
                 elif variant.startswith("-"):
                     continue
                 for piece in pieces:
-                    if (depth < NESTING and
-                            re.search(r"[\s;|&]|\$\(", piece)):
+                    if re.search(r"[\s;|&]|\$\(", piece):
+                        if depth >= NESTING:
+                            raise _LimitExceeded("nested shell strings")
                         hit = _firewall_command(piece, names, cur, env,
                                                 budget, depth + 1)
                         if hit:
@@ -538,6 +557,12 @@ def firewall_hit(key, text, pol, base=None, scan_dirs=True, budget=None):
                               scan_dirs and key not in CWD_KEYS, budget)
     else:
         hit = _name_in(text, names)
+        if (not hit and base is not None and len(text) < 1024 and
+                not re.search(r"\s", text)):
+            # An argument of a tool the hook has no table for may still be a
+            # path (a symlink to a firewalled directory, say): resolve it the
+            # way a path key is, without scanning below it.
+            hit, _ = _check_token(text, names, base, {}, False, budget)
     return f"name:{hit}" if hit else None
 
 
@@ -573,26 +598,41 @@ def pick_target(tool, tool_input, pol, cwd=None):
                     full = os.path.join(base, full)
                 if os.path.isdir(full):
                     base = os.path.realpath(full)
+                    hit = _name_in(base, _firewall_names(pol))
+                    if hit:
+                        return text, f"name:{hit}"
                 break
     budget = _Scan()
     first = ""
-    for key, text in _strings(tool_input):
-        if not text:
-            continue
-        if not first:
-            first = text
-        if key in CONTENT_KEYS:
-            continue
-        if key in PATH_KEYS or key in COMMAND_KEYS:
-            hit = match(text, pol)
-        else:
-            # Unknown keys (search queries, prompts carrying URLs, MCP
-            # arguments): URLs and checkout roots only. Path patterns over
-            # arbitrary prose would false-positive.
-            hit = match(text, pol, use_paths=False)
-        hit = hit or firewall_hit(key, text, pol, base, budget=budget)
-        if hit:
-            return text, hit
+    try:
+        has_path = searches = False
+        for key, text in _strings(tool_input):
+            if not text:
+                continue
+            if not first:
+                first = text
+            if key in CONTENT_KEYS:
+                continue
+            if key in PATH_KEYS or key in COMMAND_KEYS:
+                hit = match(text, pol)
+                has_path = has_path or (key not in CWD_KEYS)
+            else:
+                # Unknown keys (search queries, prompts carrying URLs, MCP
+                # arguments): URLs and checkout roots only. Path patterns
+                # over arbitrary prose would false-positive.
+                hit = match(text, pol, use_paths=False)
+                searches = searches or key in SEARCH_ARG_KEYS
+            hit = hit or firewall_hit(key, text, pol, base, budget=budget)
+            if hit:
+                return text, hit
+        if searches and not has_path and base is not None:
+            # Grep/Glob style call with a pattern and no path: it reads the
+            # working directory, exactly as a bare `grep -r pat` does.
+            hit = _scan_dir(base, _firewall_names(pol), budget)
+            if hit:
+                return first, f"name:{hit}"
+    except _LimitExceeded as exc:
+        return first, f"limit:{exc}"
     return first, None
 
 
@@ -690,8 +730,11 @@ def main():
         allow()
     tool, args, cwd_hint, session, extra = parse_event(data)
     pol = load_policy(cwd_hint)
-    target, hit = pick_target(tool, args, pol,
-                              cwd=cwd_hint or os.getcwd())
+    try:
+        target, hit = pick_target(tool, args, pol,
+                                  cwd=cwd_hint or os.getcwd())
+    except Exception as exc:  # fail closed: an unreadable call is not allowed
+        target, hit = "", f"limit:internal error ({type(exc).__name__})"
     if not hit:
         allow()
 
@@ -712,6 +755,12 @@ def main():
     if authorized:
         allow()
 
+    if hit.startswith("limit:"):
+        deny(
+            f"cleanroom: BLOCKED {tool} - {hit[len('limit:'):]} is too broad "
+            f"for the firewall to verify. Give a narrower path (a specific "
+            f"directory or file in your workspace) and try again. This "
+            f"attempt was logged.")
     what = ("Encumbered source (Linux/U-Boot/TF-A/vendor firmware), the "
             "dirty-side skills (board-expert, hardware-investigator, "
             "cleanroom-investigator) and the GPL spec repository "
