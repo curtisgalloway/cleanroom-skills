@@ -59,6 +59,48 @@ attestation* (`PROVENANCE.md`) is the private record of how one spec was made. M
 | Write or cache into a board spec behind the wall | `cleanroom-investigator`, with its `BOARD-SPECS.md` |
 | You are the agent writing code from a landed clean-room spec, or installing the enforcement for one | `cleanroom-implementer` |
 
+## How the pipeline fits together
+
+Moved from driver-lab's README in its milestone LS8 (2026-10-06), with names updated
+(`os-investigator` is `cleanroom-investigator`). Since LS7, `cleanroom-verifier` re-checks a
+landed spec's accuracy behind the wall; it is not one of the three below.
+
+Three skills form one pipeline for reimplementing a driver in a differently licensed OS. The
+work is split across contexts so encumbered source never reaches the context that writes the
+new code.
+
+- **`cleanroom-investigator`**: the dirty-side method. Reads the original source (Linux, Trusted
+  Firmware-A, vendor boot code, device trees) and returns hardware facts and mechanism prose,
+  never code. Every fact is tagged by provenance class (databook, standard, device tree,
+  source-observed). It triggers whenever someone asks how the kernel or firmware does
+  something, whether or not they say "clean room". Ships `scripts/leak_scan.py`, the
+  mechanical leak scanner, with tests under `tests/`.
+- **`cleanroom-spec`**: orchestration and the wall. Owns the transfer protocol, the independent
+  five-check verifier, mandatory scanning, and the evidentiary provenance ledger. Produces a
+  per-peripheral spec (Ethernet MAC, UART, GPIO, SD/MMC, USB, display/mailbox, I2C/SPI, …) that
+  an engineer can implement from scratch. Spec templates live under `templates/`.
+- **`cleanroom-implementer`**: the consumer side. Standing rules for the implementing agent;
+  enforcement (a `PreToolUse` hook, permission deny rules, a restricted subagent definition,
+  policy fragments); spec-gap filing; and the session and artifact audit
+  (`scripts/cleanroom_hook.py`, `scripts/session_audit.py`, tests under `tests/`).
+
+The enforcement install material targets **Antigravity**:
+
+- a `PreToolUse` hook in `<workspace>/.agents/hooks.json`,
+- permission deny rules,
+- a sandboxed `driver-implementer` subagent in `.agents/agents/`,
+- the `AGENTS.md` standing block,
+- audits over session transcripts and task artifacts (`~/.gemini/antigravity/brain/<GUID>/`).
+
+The two shipped Python scripts are harness-neutral. They key off argument names and event
+fields rather than tool-name tables, so they also run unchanged under Claude Code with
+`.claude/` paths.
+
+The `assets/` under `cleanroom-implementer` are install material for *consuming* projects,
+not this repo's own configuration.
+
+The design behind the pipeline is in [DESIGN.md](DESIGN.md), moved from driver-lab's design.
+
 ## Installing
 
 Install driver-lab's `driver-porting` plugin first (see its README), then this one.

@@ -5,7 +5,7 @@ SPDX-License-Identifier: Apache-2.0
 
 # Glossary
 
-Terms used in this repository. Rows marked *(driver-lab)* are shared with driver-lab's glossary.
+Terms used in this repository. Rows marked *(driver-lab)* are also defined in driver-lab's glossary.
 
 | Term | Meaning |
 | --- | --- |
@@ -17,7 +17,7 @@ Terms used in this repository. Rows marked *(driver-lab)* are shared with driver
 | Specification (spec) | A document describing hardware precisely enough to write a driver from. *(driver-lab)* |
 | Driver | Software through which an operating system controls a device. *(driver-lab)* |
 | Encumbered source | Source whose license you may not copy from into the target OS, such as a GPL driver for a differently licensed kernel. |
-| Clean-room boundary (the wall) | Separation of source-reading and implementation contexts, controlling which evidence crosses. *(driver-lab)* |
+| Clean-room boundary (the wall) | Separation of source-reading and implementation contexts, controlling which evidence crosses. |
 | Dirty side / clean side | The agents allowed to read encumbered source (investigator, verifier) / the agents that write code and must never read it (implementer). |
 | Board expert | A driver-lab skill (`board-expert`) that supplies per-board facts: memory map, interrupts, clocks, which source trees to read. Neutral; `cleanroom-investigator` wraps it and adds the wall. |
 | Board spec | driver-lab's per-hardware description (board, SoC, chip or IP block) that `board-expert` reads; the clean-room rules for one are in `cleanroom-investigator/BOARD-SPECS.md`. *(driver-lab)* |
@@ -25,12 +25,17 @@ Terms used in this repository. Rows marked *(driver-lab)* are shared with driver
 | Verification record | The per-claim verdicts on a spec (`PASS`, `FAIL`, `UNVERIFIABLE`, `GAP`, `ADJUDICATE`), kept outside it; written by driver-lab's `spec-verifier`, or by `cleanroom-verifier` behind the wall. *(driver-lab)* |
 | Provenance tag | The label on each fact saying where it came from: `[databook]`, `[standard]`, `[DT]` (device tree), `[source-observed]`, `[inference]`. |
 | Leak scan | `leak_scan.py`: a mechanical check that a spec or driver shares no long token runs or code identifiers with the source behind the wall. |
-| Transfer review | The clean-room gate a spec passes before anyone else may read it: a mechanical leak scan plus checks for copied code, structure, attractants, and the usage notice. It does not judge accuracy. *(driver-lab)* |
-| Attractant | Anything in a clean-room spec that would pull a reader back to the encumbered source, such as a source file path or "the driver does X in function Y" narration. *(driver-lab)* |
-| Provenance ledger | A record of where facts came from and what crossed the clean-room boundary. *(driver-lab)* |
-| Provenance attestation | `PROVENANCE.md`, filled by `cleanroom-spec` for each landed spec: who ran the method, the sources behind the wall, which agent saw what, pins, verifier reports and the spec's hash. The user's private record, never published; distinct from the provenance ledger, which it cites. *(driver-lab)* |
+| Transfer review | The clean-room gate a spec passes before anyone else may read it: a mechanical leak scan plus checks for copied code, structure, attractants, and the usage notice. It does not judge accuracy. |
+| Attractant | Anything in a clean-room spec that would pull a reader back to the encumbered source, such as a source file path or "the driver does X in function Y" narration. |
+| Provenance ledger | A record of where facts came from and what crossed the clean-room boundary. |
+| Provenance attestation | `PROVENANCE.md`, filled by `cleanroom-spec` for each landed spec: who ran the method, the sources behind the wall, which agent saw what, pins, verifier reports and the spec's hash. The user's private record, never published; distinct from the provenance ledger, which it cites. |
 | Pin | An exact revision of a source tree or document that a spec's facts were read from (`<repo>@<commit>`). |
 | Spec gap / spec error | A question a spec leaves unanswered, filed by an implementer / a place where the spec is wrong. *(driver-lab)* |
 | Bubblewrap (`bwrap`) | A Linux tool that runs a program in a private view of the file system, showing it only the directories it is given; the clean-room sandbox (`cleanroom_sandbox.sh`) is built on it. *(driver-lab)* |
 | Portability scan | `portability_scan.py` from public-skills: checks that agent-facing scripts make no assumption a different coding agent would break. |
 | SPDX | The standard short identifiers for licenses (`GPL-2.0-only`, `MIT`, `Apache-2.0`), used in file headers and license fields. *(driver-lab)* |
+| strace | A Linux tool that logs the system calls a program and its children make (files opened, programs run, network connections); `sandbox_audit.py` reads its log. *(driver-lab)* |
+| Canary | A file planted in the workspace and read in a pilot run, to prove the audit log records the agent's reads before the log is trusted. *(driver-lab)* |
+| Frozen archive | driver-lab's evaluations, their evidence and notebooks and the documents describing them, kept as history after the license split and still checked by its CI; new rounds run from this repository. *(driver-lab)* |
+| Blind requirement list | Requirements written from a device manual before any spec exists, used afterward to measure what the spec left out; the e1000 list is driver-lab's `evals/e1000/requirements.yaml`. *(driver-lab)* |
+| Operator | In the driver-porting runs, the coordinating agent session that prepares inputs and briefs, launches the other agents, and writes the evidence; it writes no driver code. *(driver-lab)* |

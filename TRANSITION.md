@@ -64,3 +64,20 @@ driver-lab's `evidence/LS7.md` lists every passage with its source lines and des
 | `board-expert/SKILL.md`: delegation reasons, "Method and constraints", the cache and document rules, the cache rule; `board-expert/QUESTIONS.md`: this skill's and `cleanroom-spec`'s rows | `skills/cleanroom-investigator/SKILL.md`, "Wrapping `board-expert`" |
 | `board-expert/SPEC-FORMAT.md`: "Clean-room rules for spec content", the clean-room reading of "What a spec is", the `[source-observed]` class, the `[rtl]` and `[emulated]` notes on encumbered sources; `board-spec-scaffold` and its templates: the clean-room convention, research-fill step, stub and vendor-skill text | `skills/cleanroom-investigator/BOARD-SPECS.md` |
 | `spec-verifier/SKILL.md`: "Clean-room driver specs" and the clean-room text in its shared parts; `board-expert/VENDOR-GUIDE.md`: the clean-room verifier note | `skills/cleanroom-verifier/SKILL.md` (new) |
+
+## What moved in LS8
+
+driver-lab's milestone LS8 moved the clean-room text out of its root documents, so that outside
+its frozen archive driver-lab names this method only in one README line pointing here (a check,
+`utilities/check-open-side.py`, enforces that in its CI). driver-lab's `evidence/LS8.md` lists
+every passage with its source lines.
+
+| driver-lab source | Here |
+| --- | --- |
+| `DESIGN.md`: the licensing wall, the clean-room terms, the investigator, `cleanroom-spec` and implementation pieces, lifecycle steps 2, 3 and 5 and the clean-room sentences of steps 1 and 4, the leak scanner, the boundary limit | [DESIGN.md](DESIGN.md) (new), passage by passage with line ranges |
+| `README.md`: "Clean-room driver porting" | README, "How the pipeline fits together" |
+| `AGENTS.md`: the Isolation rule and the sandbox approval note | AGENTS.md, "Isolation" |
+| `GLOSSARY.md`: clean-room boundary, transfer review, attractant, provenance ledger, provenance attestation | GLOSSARY.md (rows that were already here; strace, canary, operator, blind requirement list and frozen archive added) |
+
+driver-lab's evaluations stay there as a frozen archive with a header pointing here;
+`RECONSTRUCTION.md` and `QEMU-DIFFERENTIAL.md` stay with them.
