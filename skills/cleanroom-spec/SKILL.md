@@ -28,7 +28,7 @@ pinned provenance, the verifier's verdict, the scan reports, and the ledger.
 
 **Not the skill for source you own.** If the driver source is yours, your organization's, or
 compatibly licensed, the wall below is not just unnecessary but counterproductive — use
-`anchored-peripheral-spec` (a driver-lab skill, installed alongside), which produces the same spec shape with every fact anchored to the
+`peripheral-spec` (a driver-lab skill, installed alongside), which produces the same spec shape with every fact anchored to the
 file:line it came from so a reviewer can verify it against the code.
 
 ## Compose, don't duplicate

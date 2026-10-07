@@ -72,12 +72,12 @@ accuracy `PASS` is not evidence that the source-access boundary was enforced. Ke
 separate.
 
 Source that the target may derive from takes a different route:
-[`anchored-peripheral-spec`](https://github.com/curtisgalloway/driver-lab/blob/6a58cb427dc0f5ebbdecae68f8db036208d85512/skills/anchored-peripheral-spec/SKILL.md) keeps direct code citations
+[`peripheral-spec`](https://github.com/curtisgalloway/driver-lab/blob/c2217166e81797d6235a564e1202d03a1cbcea6f/skills/peripheral-spec/SKILL.md) keeps direct code citations
 and permits source reading. That route is deliberately unsuitable as a substitute for the clean-room
 route on encumbered material. The skill tells an uncertain caller to use the clean-room route. This
 document describes those repository rules, rather than deciding license compatibility.
 
-(Since driver-lab's LS7 the anchored skill no longer names the clean-room route; the README of
+(Since driver-lab's LS7 the peripheral-spec skill no longer names the clean-room route; the README of
 this repository says when to use which.)
 
 ## Evidence model, behind the wall
@@ -126,12 +126,12 @@ consumes the landed document; `spec-verifier` supplies a separate accuracy pass.
 (Since LS4 a third template, `PROVENANCE.md`, holds the private provenance attestation; since LS7
 the accuracy pass behind the wall is `cleanroom-verifier`, which wraps `spec-verifier`.)
 
-From the `anchored-peripheral-spec` paragraph (lines 377–378): the skill refuses the
+From the `peripheral-spec` paragraph (lines 377–378): the skill refuses the
 encumbered-source use case and fabricated anchors; it does not load the clean-room investigation
 role for its source-reading workflow.
 
 From the `reference-driver-review` paragraph (lines 391–392) *(recast)*: `reference-driver-review`'s
-checkers and later verification reuse the anchored route; it is not an alternative input channel
+checkers and later verification reuse the peripheral-spec route; it is not an alternative input channel
 for a clean-room implementer.
 
 ### Verification
@@ -266,9 +266,9 @@ line 1085 also listed the implementation skill as shipped).
 ## Extending: choosing the route
 
 From driver-lab's "Extending the system" (lines 1169–1170). driver-lab now says to use the
-anchored authoring skill and place the spec by its sources' licenses.
+peripheral-spec skill and place the spec by its sources' licenses.
 
-For a new peripheral driver spec, choose the clean-room or anchored authoring skill based on the
+For a new peripheral driver spec, choose the clean-room or peripheral-spec skill based on the
 reference relationship to the target.
 
 ## Limits
