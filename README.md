@@ -133,6 +133,13 @@ CI (`.github/workflows/checks.yml`) runs these and the portability scan from
 [public-skills](https://github.com/curtisgalloway/public-skills) on
 `skills/cleanroom-implementer/scripts`, pinned to a commit.
 
+## Pending work
+
+Decided by the user on 2026-10-07: the pending e1000 differential work moves here from
+driver-lab, whose evaluations are a frozen archive. It is spec revision 10 of the e1000 spec
+(revisions 6 to 8 are in driver-lab's archive) and a candidate round that rebuilds the driver
+from it. It is tracked here from now on.
+
 ## History
 
 The skills were split out of driver-lab with their history on 2026-10-06; see
