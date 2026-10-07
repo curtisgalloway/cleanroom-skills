@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+.DS_Store
+*.swp
+*.swo
+*~
+.env
+.env.*
+
+# Agent worktrees (see AGENTS.md)
+.claude/worktrees/

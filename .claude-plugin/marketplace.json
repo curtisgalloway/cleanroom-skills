@@ -1,0 +1,17 @@
+{
+  "name": "cleanroom-skills",
+  "owner": {
+    "name": "curtisgalloway",
+    "url": "https://github.com/curtisgalloway"
+  },
+  "metadata": {
+    "description": "Clean-room driver-porting skills. Their output is never published; install driver-lab alongside."
+  },
+  "plugins": [
+    {
+      "name": "cleanroom-skills",
+      "source": "./",
+      "description": "The clean-room method: cleanroom-investigator (facts from encumbered source, in original words, with a leak scanner), cleanroom-spec (a verified peripheral spec and a private provenance record), and cleanroom-implementer (hooks, sandbox and audits that keep the implementing agent away from the source). Needs driver-lab's driver-porting plugin installed alongside."
+    }
+  ]
+}

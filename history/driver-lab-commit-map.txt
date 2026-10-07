@@ -1,0 +1,34 @@
+# SPDX-FileCopyrightText: 2026 contributors
+# SPDX-License-Identifier: Apache-2.0
+#
+# This repository's history was cut out of curtisgalloway/driver-lab with git filter-repo on
+# 2026-10-06, from driver-lab commit 5d7eac2dabbb07265a61b56a3ad710eb9d03c454, keeping
+# skills/cleanroom-spec, skills/cleanroom-implementer and skills/os-investigator (renamed
+# skills/cleanroom-investigator). That gave every kept commit a new hash. Each line maps a
+# driver-lab commit (left) to its copy here (right). driver-lab commits that touched none of the
+# three skills have no copy here and are left out (filter-repo maps them to all zeros).
+# A hash cited from before the split may be a driver-lab hash (translate it through this map) or
+# a public-skills hash (translate it through driver-lab's history/public-skills-commit-map.txt
+# first, then this map).
+old                                      new
+01e8a801e59b879c61225bb4985513c36f5103e0 19602c030853e67da6e7b4c71bece27a15050ea1
+1b38c9b621918cb49df0df43c40cfe47d87deeca de4fe236ee748bc68e0ebd130a7fb98f5aca30b1
+24975d72419c2a319130384986bb008bacd6c2ba 0b7b7da20660a429fb8bdfb9c9b1a39b268ce7a2
+2d6cba7049b38ccb7401655c3b143d8443eb74c7 6237c1962756d606524988fe08aaf305face1742
+310710bd20f17097bb62ffe0ec045de02bc7a66c 8296076a01a6e37cb1cb6269739e6b285b01859a
+329eb1a662735eb2ba6ee9f62434dd094bffce13 fc6b2cfa609235f82a0aae6e8995235a44d88417
+38e46db8e2ebe5ca83f0b7ec173a7129cffd23ea e34239df79fc09e7ab658b57c3f69ab6d249332e
+6626ff5473c606a4eee01e5896ec893e29f8fade f359f238198a7aac7bcdf17e21c7af84be0bb7ad
+66dc787ad040413f61d243315fe4d8cc4166d8e8 2d59f88bfd7b2813ce9e07e2d075f32a667e4bf8
+6f69cf529f78b7f73b8ab8a8836d47795593f6cd e402e934d82311dc9dbdabafbe767491dc395311
+a5378d12a6113f147a3495d91218024bf8f66dca 4b61868283ce25414b385e81de168c5955b51e4e
+a82785c27713ca25d4259d1d2ecdb2436d19fc4d 3d20315a9893c73f18b966709671af15f4cf560f
+b7e5db5072ff3585ccf9d88f54c502cfe87ad5de 6285e53b04633683e0ca3bd280b04735e7dd2106
+ba91add28886c3b61a7fdc7033d9c4eb5be726a9 312b09ad3e66dc07755c1d38767259994cb97166
+bdb51494f883c2ba9c5ad179485f2b2397642492 b40be7edfae5d80149fe779232111f68b845762b
+c94ad9b9149fa14f645998429d239cc9b764d825 d7e118cc6ce009c3ab5bc6e6e1e98c7c8b376c4a
+d2ce4c8e214d0ed2db7724d8c60577d224aa9565 3fd9ce29dcd94855eb4b30791d16f5b85a9a2396
+d2dea4016efe1a6cc272beb1511113d5f8619f61 bcba6ee8554972911c13c0a859aa1df22e9fff8c
+da2c0ab96ff374a9c914a4a8ba48a869cd781eba 06f4141d6612dc93a7b85a6da2ac81e0eec37197
+ddf1b04311b00fe0f919d9213d210d05a762c616 034d54c2b509f453174b65cbc740bb690e18b800
+fa86bc71efa69aa5ea3e92fe52a19c80743d40f6 c600899f4914e4945268a666bc4772e0681ed549
