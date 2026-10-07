@@ -6,8 +6,9 @@ description: >-
   and mechanism descriptions in original words — never source code, even when asked — every fact
   tagged by provenance class (databook/standard/DT/source-observed/inference). Use whenever someone asks how
   the kernel or firmware does X, or what address/IRQ/clock/init sequence a peripheral uses, even
-  if they don't say "clean room". The method skill; board facts live in the board-expert skills.
-  Ships the mechanical leak scanner (scripts/leak_scan.py).
+  if they don't say "clean room". The method skill; it wraps driver-lab's board-expert, which
+  supplies the board facts and the spec, and adds the wall. Ships the mechanical leak scanner
+  (scripts/leak_scan.py) and the clean-room rules for board specs (BOARD-SPECS.md).
 ---
 
 <!--
@@ -71,18 +72,69 @@ answer your gap launders the read through a sanctioned role while the answer sti
 code-writing context on your terms. File a spec-gap (`docs/spec-gaps/<device>.md`) and let the
 orchestrator route it through the dirty side and the verify-and-land loop.
 
-## Using a board-expert skill
+## Wrapping `board-expert`
+
+`board-expert` is a driver-lab skill, installed alongside. It is neutral: it resolves board specs,
+materializes their sources and answers hardware questions, with no clean-room rule of its own. This
+skill wraps it: **load both**, use `board-expert` for what it owns, and apply this skill's rules on
+top. Where the two differ, this skill wins. The clean-room text that used to live inside
+`board-expert` and its format moved here in driver-lab's license-split milestone LS7; the parts
+about writing board specs are in `BOARD-SPECS.md` beside this file.
 
 If a board-expert skill is available for the target hardware (a `<board>-expert` stub, or `board-expert`
-with a spec id; `board-expert` is a driver-lab skill, installed alongside), **read its SKILL.md first.** It supplies the board-specific map: which
+with a spec id), **read its SKILL.md first.** It supplies the board-specific map: which
 repos/branches to read, the canonical file paths, addressing model, boot/hand-off facts, and known
 gotchas; with `board-expert` the map is the composed board spec, and an IP block's register model
 comes from its `ip` spec while its placement comes from the SoC's `instances:` row. Then apply the method here to turn that map
 into a clean-room answer. This skill owns the *how*; the board-expert owns the *where* and *what*.
 
-**Caching rule:** content cached *into* a board-expert skill is itself a wall-crossing that replays
-into every future context that loads the skill. Cache only what is datasheet-cited or has PASSed the
-`cleanroom-spec` verifier — never unverified extracts from encumbered source.
+What each skill owns when they run together:
+
+| Part of `board-expert` | Behind the wall |
+| --- | --- |
+| § 1 Resolve the spec, `QUESTIONS.md`, `Needs decision` | Used as written |
+| § 2 Materialize resources | Used as written, with the cache and document rules below |
+| § 3 Investigate | Replaced: this skill's *Investigation method*, constraints and tags |
+| § 4 Report | Replaced: this skill's *Report format*, ending with the clean-room attestation, plus `board-expert`'s **Spec provenance** block |
+| *Without a spec* | Its step 2 runs this skill instead of `board-expert` § 3 |
+| *Cache rule* | Tightened: the caching rule below |
+
+**Running it (moved from `board-expert`, "How to run this skill").** Spawn the subagent with
+`board-expert`, this skill, and any vendor skill that applies. The main agent never touches the
+cache, never reads GPL source, and never micromanages the cache in the subagent's prompt. The main
+agent's entire job is: ask the question → receive clean-room facts back. This split is the whole
+point. Letting the main agent (which writes the differently-licensed target-OS code) run the skill
+body inline would pull GPL source into its context and destroy the clean-room boundary. When in
+doubt, delegate.
+
+**Method and constraints (moved from `board-expert`, "Method and constraints").** Load and follow
+this skill for the investigation method, the report format, and — non-negotiably — the
+**clean-room discipline: return hardware facts and mechanism descriptions in your own words, never
+source code**, even if asked to paste it. The spec supplies the *where* and *what* (sources,
+addresses, quirks); this skill supplies the *how*. If `board-expert` is ever loaded without
+`cleanroom-investigator` behind the wall, still apply the one rule that matters most: **no source
+code in the output** — describe behavior, give addresses/sequences, and link the human to the
+upstream file instead. Apply it with the composed
+spec as the map: the quick-facts orient the question, each repository's `files` list is where to
+look first, and the gotchas are the assumptions to check. Cite documents, tag every fact with its
+provenance class, and never emit source. Without a spec, run this skill with mainline Linux,
+Trusted Firmware-A, and any public datasheet as the map and authority.
+
+**Cache and documents (moved from `board-expert` § 2 and `SPEC-FORMAT.md`).** The cache is for the
+expert only. The main agent must not read it; keeping the cache behind the expert is what preserves
+the clean-room boundary: the cache is the encumbered side of the clean-room wall; the spec is the
+clean side. Read `resources.docs` entries marked `cite: true` first; they are the clean-room
+authority: cite it, not the kernel. Kernel and firmware source are the map, not the citation.
+
+**Caching rule:** content cached *into* a board-expert skill or a board spec is itself a
+wall-crossing that replays into every future context that loads it. Cache only what is
+datasheet-, standard-, documentation-, or DT-cited, has PASSed the `cleanroom-spec` verifier, or
+was measured on hardware — never unverified extracts from encumbered source. `BOARD-SPECS.md` §
+*Clean-room rules for spec content* is the full statement.
+
+**Who asks (moved from `board-expert/QUESTIONS.md`).** In driver-lab's `Needs decision` protocol,
+`cleanroom-spec` is an orchestrator: it asks at intake, and again for any `Needs decision` the
+expert returns. This skill is a subagent role: it never asks, and returns `Needs decision`.
 
 ---
 

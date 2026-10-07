@@ -19,7 +19,10 @@ Terms used in this repository. Rows marked *(driver-lab)* are shared with driver
 | Encumbered source | Source whose license you may not copy from into the target OS, such as a GPL driver for a differently licensed kernel. |
 | Clean-room boundary (the wall) | Separation of source-reading and implementation contexts, controlling which evidence crosses. *(driver-lab)* |
 | Dirty side / clean side | The agents allowed to read encumbered source (investigator, verifier) / the agents that write code and must never read it (implementer). |
-| Board expert | A driver-lab skill (`board-expert`) that supplies per-board facts: memory map, interrupts, clocks, which source trees to read. |
+| Board expert | A driver-lab skill (`board-expert`) that supplies per-board facts: memory map, interrupts, clocks, which source trees to read. Neutral; `cleanroom-investigator` wraps it and adds the wall. |
+| Board spec | driver-lab's per-hardware description (board, SoC, chip or IP block) that `board-expert` reads; the clean-room rules for one are in `cleanroom-investigator/BOARD-SPECS.md`. *(driver-lab)* |
+| Wrap (a skill) | Load another skill and follow it, adding rules that win where the two differ: `cleanroom-investigator` wraps `board-expert`, `cleanroom-verifier` wraps `spec-verifier`. |
+| Verification record | The per-claim verdicts on a spec (`PASS`, `FAIL`, `UNVERIFIABLE`, `GAP`, `ADJUDICATE`), kept outside it; written by driver-lab's `spec-verifier`, or by `cleanroom-verifier` behind the wall. *(driver-lab)* |
 | Provenance tag | The label on each fact saying where it came from: `[databook]`, `[standard]`, `[DT]` (device tree), `[source-observed]`, `[inference]`. |
 | Leak scan | `leak_scan.py`: a mechanical check that a spec or driver shares no long token runs or code identifiers with the source behind the wall. |
 | Transfer review | The clean-room gate a spec passes before anyone else may read it: a mechanical leak scan plus checks for copied code, structure, attractants, and the usage notice. It does not judge accuracy. *(driver-lab)* |

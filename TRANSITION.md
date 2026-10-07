@@ -49,6 +49,18 @@ rename.
   above.
 - `board-expert`, `anchored-peripheral-spec`, `spec-verifier` and the other open skills, which the
   clean-room skills use; install driver-lab alongside.
-- Until driver-lab's next milestone (LS7), driver-lab also keeps its copies of the three skills
-  and the clean-room rules inside `board-expert` and `spec-verifier`; LS7 removes them there and
-  moves those rules here.
+- Until driver-lab's milestone LS7, driver-lab also kept its copies of the three skills and the
+  clean-room rules inside `board-expert` and `spec-verifier`.
+
+## What moved in LS7
+
+driver-lab's milestone LS7 deleted its copies of the three skills and moved the clean-room text
+out of its open skills, so that those carry none. The text landed here unchanged apart from names
+(`os-investigator` is `cleanroom-investigator`) and the merges and reframings noted there;
+driver-lab's `evidence/LS7.md` lists every passage with its source lines and destination.
+
+| driver-lab source | Here |
+| --- | --- |
+| `board-expert/SKILL.md`: delegation reasons, "Method and constraints", the cache and document rules, the cache rule; `board-expert/QUESTIONS.md`: this skill's and `cleanroom-spec`'s rows | `skills/cleanroom-investigator/SKILL.md`, "Wrapping `board-expert`" |
+| `board-expert/SPEC-FORMAT.md`: "Clean-room rules for spec content", the clean-room reading of "What a spec is", the `[source-observed]` class, the `[rtl]` and `[emulated]` notes on encumbered sources; `board-spec-scaffold` and its templates: the clean-room convention, research-fill step, stub and vendor-skill text | `skills/cleanroom-investigator/BOARD-SPECS.md` |
+| `spec-verifier/SKILL.md`: "Clean-room driver specs" and the clean-room text in its shared parts; `board-expert/VENDOR-GUIDE.md`: the clean-room verifier note | `skills/cleanroom-verifier/SKILL.md` (new) |
