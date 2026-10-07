@@ -23,7 +23,7 @@ it, with the procedure that produces it. A *clean-room driver spec* is the per-p
 `cleanroom-spec` produces, with its provenance ledger and usage notice. *Encumbered source*, the
 *wall* and the *clean side* are in the [glossary](../../GLOSSARY.md).
 
-driver-lab's `spec-verifier` is neutral: it verifies board specs and source-anchored specs and
+driver-lab's `spec-verifier` is neutral: it verifies board specs and peripheral specs and
 reviews, and says that a skill defining its own spec kind may wrap it. This skill is that wrapper
 for the clean room. **Load `spec-verifier` and follow it**, with the rules below added to it and
 winning where the two differ. The text below moved here from `spec-verifier` in driver-lab's

@@ -33,7 +33,7 @@ attestation* (`PROVENANCE.md`) is the private record of how one spec was made. M
   private record.
 - **What it is not for:** laundering GPL code. If you can use the GPL, or the reference source is
   yours or permissively licensed, you do not need a wall: use driver-lab's
-  `anchored-peripheral-spec`, which cites every fact back to the source lines, and publish the
+  `peripheral-spec`, which cites every fact back to the source lines, and publish the
   spec where its license fits. Also not for NDA or vendor-licensed material you are not allowed
   to read at all, and not legal advice: none of this has had legal review.
 - **It depends on [driver-lab](https://github.com/curtisgalloway/driver-lab), installed
