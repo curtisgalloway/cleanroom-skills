@@ -45,5 +45,17 @@ The last one needs a public-skills checkout; CI pins the scanner to one of its c
   `origin/main`. Push or open a pull request only on the user's explicit "push", and "push" never
   means pushing `main`. Merge only when told; deleting the merged branch, local and remote, is
   part of merging. Stage files by name.
+- **Evaluation rounds** run from here; driver-lab's evaluations (`evals/`, their evidence and
+  notebooks) are a frozen archive since its license split and take no new rounds. The design
+  is [DESIGN.md](DESIGN.md), read with driver-lab's.
+- **Isolation** (moved from driver-lab's `AGENTS.md` in its milestone LS8, unchanged): the
+  operator reads the reference driver and QEMU; implementers never do. The
+  blind requirement list stays private until its recall is measured. An implementer launched as
+  a separate CLI (Codex) on the test host, which also holds the reference source, runs under
+  `skills/cleanroom-implementer/scripts/cleanroom_sandbox.sh` with a fresh agent home, and its
+  strace log is checked with `sandbox_audit.py`, after a canary pilot, before its output is used
+  (cleanroom-implementer, "Tier 1 on Linux"). Copying the operator's agent credential into that
+  home and bypassing the agent's own sandbox inside bubblewrap are expected; the user approved
+  both on 2026-09-25.
 - **Changing what a skill does** (its rules, the hook's policy, the scanner) needs a test that
   fails without the change, and a reviewer who reads the diff.
