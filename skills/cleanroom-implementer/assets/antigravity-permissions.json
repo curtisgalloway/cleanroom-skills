@@ -26,7 +26,8 @@
       "view_file(docs/provenance)",
 
       "run_command(regex:kernel\\.org|bootlin\\.com|kernel\\.googlesource\\.com|github\\.com/torvalds|github\\.com/u-boot|github\\.com/raspberrypi/linux|source\\.denx\\.de|git\\.trustedfirmware\\.org)",
-      "run_command(regex:/linux/(drivers|arch|include|kernel)/|linux\\.git|u-boot\\.git|arm-trusted-firmware|trusted-firmware-a)"
+      "run_command(regex:/linux/(drivers|arch|include|kernel)/|linux\\.git|u-boot\\.git|arm-trusted-firmware|trusted-firmware-a)",
+      "run_command(regex:board-expert|hardware-investigator|cleanroom-investigator|hardware-specs-gpl)"
     ]
   },
 

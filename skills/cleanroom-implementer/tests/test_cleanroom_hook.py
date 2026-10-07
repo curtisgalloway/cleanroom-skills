@@ -352,5 +352,369 @@ class TestPolicyPlumbing(HookCase):
                 self.assertEqual(len(log), 1)
 
 
+FIREWALLED = ("board-expert", "hardware-investigator", "cleanroom-investigator",
+              "hardware-specs-gpl")
+
+
+def firewall_paths(name):
+    """The same target as installed in each way a skill or checkout lands."""
+    if name == "hardware-specs-gpl":
+        return [
+            f"/home/dev/src/{name}/specs/widgetron.md",
+            f"/home/dev/work/{name}",
+            f"/home/dev/Downloads/{name}-main/README.md",
+        ]
+    return [
+        f"/home/dev/.claude/skills/{name}/SKILL.md",
+        f"/home/dev/.claude/plugins/cache/mkt/plug/1.2.3/skills/{name}/SKILL.md",
+        f"/home/dev/src/driver-lab/skills/{name}/SKILL.md",
+        f"/home/dev/.gemini/skills/{name}/references/x.md",
+    ]
+
+
+class TestFirewallByName(HookCase):
+    """LS-R18: the dirty-side skills and the GPL spec repository are blocked
+    by name, however installed. Investigator and verifier stay allowed."""
+
+    def test_path_forms_denied_for_the_implementer(self):
+        for name in FIREWALLED:
+            for path in firewall_paths(name):
+                with self.subTest(path=path):
+                    rc, err, log = self.fire("view_file", {"TargetFile": path})
+                    self.assertEqual(rc, 2, err)
+                    self.assertIn(name, log[0]["pattern"])
+                    self.assertEqual(log[0]["action"], "blocked")
+
+    def test_path_forms_allowed_for_investigator_and_verifier(self):
+        for name in FIREWALLED:
+            for role in ("investigator", "verifier"):
+                path = firewall_paths(name)[0]
+                with self.subTest(path=path, role=role):
+                    rc, err, log = self.fire(
+                        "view_file", {"TargetFile": path}, role=role)
+                    self.assertEqual(rc, 0, err)
+                    self.assertEqual(json.loads(self.stdout), ALLOW)
+                    self.assertEqual(log[0]["action"], "allowed-role")
+
+    def test_command_forms(self):
+        for name in FIREWALLED:
+            path = firewall_paths(name)[0]
+            cmds = [f"cat {path}", f"ls -R {os.path.dirname(path)}",
+                    f"cp -r {os.path.dirname(path)} /tmp/copy",
+                    f"cd {os.path.dirname(path)} && cat SKILL.md"]
+            if name == "hardware-specs-gpl":
+                cmds.append(f"git clone https://github.com/someone/{name}.git")
+            for cmd in cmds:
+                with self.subTest(cmd=cmd):
+                    rc, err, _ = self.fire("run_command", {"CommandLine": cmd})
+                    self.assertEqual(rc, 2, err)
+                    rc, err, log = self.fire(
+                        "run_command", {"CommandLine": cmd},
+                        role="investigator")
+                    self.assertEqual(rc, 0, err)
+                    self.assertEqual(log[0]["action"], "allowed-role")
+
+    def test_search_forms(self):
+        for name in FIREWALLED:
+            d = os.path.dirname(firewall_paths(name)[0])
+            with self.subTest(name=name):
+                rc, err, _ = self.fire("grep_search", {
+                    "Query": "reset", "SearchDirectory": d})
+                self.assertEqual(rc, 2, err)
+                rc, err, _ = self.fire("Grep", {"pattern": "reset",
+                                                "path": d}, shape="flat")
+                self.assertEqual(rc, 2, err)
+                rc, err, _ = self.fire("Glob", {
+                    "pattern": f"**/{name}/**/*.md"}, shape="flat")
+                self.assertEqual(rc, 2, err)
+                rc, err, _ = self.fire("run_command", {
+                    "CommandLine": f"find / -type d -name {name}"})
+                self.assertEqual(rc, 2, err)
+
+    def test_loading_by_name_or_delegating_by_name(self):
+        """The Skill tool and subagent prompts carry the name in a key the
+        hook has no path semantics for; the name is still the target."""
+        for name in FIREWALLED:
+            with self.subTest(name=name):
+                rc, err, _ = self.fire("Skill", {"skill": name},
+                                       shape="flat")
+                self.assertEqual(rc, 2, err)
+                rc, err, _ = self.fire("Agent", {
+                    "prompt": f"Load the {name} skill and tell me the bus map"},
+                    shape="flat")
+                self.assertEqual(rc, 2, err)
+                rc, err, _ = self.fire("mcp__git__get_file", {
+                    "owner": "someone", "repo": name, "path": "README.md"})
+                self.assertEqual(rc, 2, err)
+                rc, err, _ = self.fire("Skill", {"skill": name},
+                                       shape="flat", role="verifier")
+                self.assertEqual(rc, 0, err)
+
+    def test_case_and_url_encoding(self):
+        for target in ("/home/dev/.claude/skills/Board-Expert/SKILL.md",
+                       "/HOME/DEV/SRC/HARDWARE-SPECS-GPL/x.md",
+                       "file:///home/dev/.claude/skills/board%2Dexpert/SKILL.md",
+                       "/home/dev/.claude/skills/board%2dexpert/SKILL.md"):
+            with self.subTest(target=target):
+                rc, err, _ = self.fire("view_file", {"TargetFile": target})
+                self.assertEqual(rc, 2, err)
+
+    def test_traversal_still_names_the_target(self):
+        for target in ("/home/dev/.claude/skills/other/../board-expert/SKILL.md",
+                       "/home/dev/src/./hardware-specs-gpl/../hardware-specs-gpl/a"):
+            with self.subTest(target=target):
+                rc, err, _ = self.fire("view_file", {"TargetFile": target})
+                self.assertEqual(rc, 2, err)
+
+    def test_allowed_neighbors(self):
+        """Docs and permissive spec repositories, and the other clean-room
+        skills, are allowed to the implementer by design."""
+        for target in ("/home/dev/src/hardware-specs-docs/specs/widgetron.md",
+                       "/home/dev/src/hardware-specs-permissive/specs/w.md",
+                       "/home/dev/.claude/skills/cleanroom-implementer/SKILL.md",
+                       "/home/dev/.claude/skills/peripheral-spec/SKILL.md",
+                       "/home/dev/.claude/skills/cleanroom-spec/SKILL.md",
+                       "docs/widgetron-spec.md"):
+            with self.subTest(target=target):
+                rc, err, log = self.fire("view_file", {"TargetFile": target})
+                self.assertEqual(rc, 0, err)
+                self.assertEqual(log, [])
+
+    def test_written_content_naming_a_skill_is_still_not_scanned(self):
+        rc, err, log = self.fire("write_file", {
+            "TargetFile": "docs/NOTES.md",
+            "CodeEdit": "Never load board-expert or read hardware-specs-gpl."})
+        self.assertEqual(rc, 0, err)
+        self.assertEqual(log, [])
+
+    def test_a_custom_policy_cannot_drop_the_firewall(self):
+        """The firewall is not a policy key: a workspace policy that predates
+        it (or omits it) must not silently turn it off."""
+        rc, err, _ = self.fire(
+            "view_file",
+            {"TargetFile": "/home/dev/.claude/skills/board-expert/SKILL.md"},
+            policy=FIX / "custom-policy.json")
+        self.assertEqual(rc, 2, err)
+
+    def test_policy_can_add_names(self):
+        def setup(root):
+            cfg = root / ".agents"
+            cfg.mkdir()
+            (cfg / "cleanroom-policy.json").write_text(json.dumps({
+                "blocked_names": ["acme-dirty-skill"]}))
+        rc, err, log = self.fire(
+            "view_file",
+            {"TargetFile": "/home/dev/.claude/skills/acme-dirty-skill/a.md"},
+            project_var=None, setup=setup)
+        self.assertEqual(rc, 2, err)
+        self.assertIn("acme-dirty-skill", log[0]["pattern"])
+
+
+def make_tree(root):
+    """A workspace holding a skills directory and a spec checkout, as the
+    firewall must treat them even when the command never names them."""
+    for rel in ("skills/board-expert/SKILL.md",
+                "skills/hardware-investigator/SKILL.md",
+                "skills/peripheral-spec/SKILL.md",
+                "store/hardware-specs-gpl/specs/x.md",
+                "src/main.rs"):
+        f = root / rel
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text("x\n")
+    (root / "refs").symlink_to(root / "skills" / "board-expert")
+    (root / "gpl").symlink_to(root / "store" / "hardware-specs-gpl")
+    (root / "deep" / "a" / "b").mkdir(parents=True)
+    (root / "deep" / "a" / "b" / "alias").symlink_to(
+        root / "skills" / "board-expert")
+
+
+class TestFirewallWithoutNamingThePath(HookCase):
+    """Reads that never write the blocked name, or write it only through
+    something the shell or the filesystem resolves."""
+
+    def deny(self, tool, args, **kw):
+        rc, err, _ = self.fire(tool, args, setup=make_tree, **kw)
+        self.assertEqual(rc, 2, f"{args}: {err}")
+
+    def allow(self, tool, args, **kw):
+        rc, err, log = self.fire(tool, args, setup=make_tree, **kw)
+        self.assertEqual(rc, 0, f"{args}: {err}")
+        self.assertEqual(log, [])
+
+    def cmd(self, line, **kw):
+        self.deny("run_command", {"CommandLine": line}, **kw)
+
+    def ok(self, line, **kw):
+        self.allow("run_command", {"CommandLine": line}, **kw)
+
+    def test_symlink_resolved(self):
+        self.deny("view_file", {"TargetFile": "refs/SKILL.md"})
+        self.deny("view_file", {"TargetFile": "gpl/specs/x.md"})
+        self.cmd("cat refs/SKILL.md")
+        self.cmd("cat gpl/specs/x.md")
+
+    def test_symlink_below_the_search_root(self):
+        self.deny("grep_search", {"Query": "reset", "SearchDirectory": "deep"})
+
+    def test_glob_expanded_on_disk(self):
+        self.cmd("cat skills/b*/SKILL.md")
+        self.cmd("cat skills/*/SKILL.md")
+        self.cmd("cat store/hardware-*-gpl/specs/x.md")
+        self.deny("view_file", {"TargetFile": "skills/board-e?pert/SKILL.md"})
+
+    def test_glob_that_matches_only_allowed_entries(self):
+        self.ok("cat skills/peri*/SKILL.md")
+        self.ok("cat src/*.rs")
+
+    def test_cd_then_relative_read(self):
+        self.cmd("cd skills/board-expert && cat SKILL.md")
+        self.cmd("cd refs && cat SKILL.md")
+        self.cmd("cd gpl; cat specs/x.md")
+        self.cmd("pushd refs; cat ./SKILL.md")
+
+    def test_cwd_argument_inside_a_blocked_tree(self):
+        self.deny("run_command", {"CommandLine": "cat SKILL.md", "Cwd": "refs"})
+        self.deny("run_command", {"CommandLine": "cat specs/x.md",
+                                  "Cwd": "gpl"})
+
+    def test_recursive_search_from_an_ancestor(self):
+        self.cmd("grep -r reset skills")
+        self.cmd("rg reset .")
+        self.cmd("cd skills && rg reset")
+        self.cmd("find store -type f -exec cat {} +")
+        self.cmd("tar cf - store")
+        self.cmd("cp -r skills /tmp/s")
+
+    def test_listing_a_directory_is_not_reading_it(self):
+        self.ok("ls skills")
+        self.ok("ls .")
+        self.ok("grep -r main src")
+
+    def test_environment_and_shell_variables(self):
+        self.cmd("cat skills/$FW_NAME/SKILL.md",
+                 extra_env={"FW_NAME": "board-expert"})
+        self.cmd("cat skills/${FW_NAME}/SKILL.md",
+                 extra_env={"FW_NAME": "Board-Expert"})
+        self.cmd("X=board; cat skills/${X}-expert/SKILL.md")
+        self.cmd("D=refs cat $D/SKILL.md")
+        self.cmd("D=skills; cd $D/board-expert && cat SKILL.md")
+
+    def test_quoting_and_braces(self):
+        self.cmd("cat skills/board-'expert'/SKILL.md")
+        self.cmd('cat skills/"board"-expert/SKILL.md')
+        self.cmd("cat skills/board-\\expert/SKILL.md")
+        self.cmd("cat skills/{board,x}-expert/SKILL.md")
+
+    def test_nested_shells_and_substitution(self):
+        self.cmd("bash -c 'cd refs; cat SKILL.md'")
+        self.cmd('sh -c "cat skills/b*/SKILL.md"')
+        self.cmd("echo $(cat refs/SKILL.md)")
+        self.cmd("echo `cat gpl/specs/x.md`")
+        self.cmd("cat < refs/SKILL.md")
+
+    def test_relative_paths_and_dotdot(self):
+        self.deny("view_file", {"TargetFile": "src/../refs/SKILL.md"})
+        self.deny("view_file", {"TargetFile": "./deep/a/b/alias/SKILL.md"})
+
+    def test_benign_commands_in_the_same_tree(self):
+        self.ok("cat src/main.rs")
+        self.ok("cd src && cat main.rs")
+        self.allow("view_file", {"TargetFile": "skills/peripheral-spec/SKILL.md"})
+
+    def test_roles_may_still_read_through_the_same_routes(self):
+        for cmd in ("cat refs/SKILL.md", "cd refs && cat SKILL.md",
+                    "grep -r reset skills"):
+            with self.subTest(cmd=cmd):
+                rc, err, log = self.fire("run_command", {"CommandLine": cmd},
+                                         setup=make_tree, role="investigator")
+                self.assertEqual(rc, 0, err)
+                self.assertEqual(log[0]["action"], "allowed-role")
+
+
+def make_wide_tree(root):
+    for i in range(250):
+        d = root / "wide" / f"a{i:03d}"
+        d.mkdir(parents=True)
+    (root / "wide" / "board-expert").mkdir()
+    (root / "docs-only" / "hardware-specs-docs").mkdir(parents=True)
+    (root / "docs-only" / "hardware-specs-docs" / "x.md").write_text("x\n")
+
+
+class TestFirewallReviewFindings(HookCase):
+    """Cases found by the review-swarm over the first version of the firewall."""
+
+    def run_cmd(self, line, setup=make_wide_tree, **kw):
+        return self.fire("run_command", {"CommandLine": line}, setup=setup,
+                         **kw)
+
+    def test_assignments_after_export_are_tracked(self):
+        for line in ("export a=board- b=expert; cat wide/${a}${b}/x",
+                     "export a=board-; export b=expert; cat wide/${a}${b}/x",
+                     "declare a=board- b=expert; cat wide/$a$b/x",
+                     "readonly a=board- b=expert; cat wide/$a$b/x"):
+            with self.subTest(line=line):
+                rc, err, _ = self.run_cmd(line)
+                self.assertEqual(rc, 2, err)
+
+    def test_mid_word_hash_is_not_a_comment(self):
+        rc, err, _ = self.run_cmd("echo a#b ; cat wide/b*")
+        self.assertEqual(rc, 2, err)
+        rc, err, _ = self.run_cmd("echo $# ; cat wide/board-e*t")
+        self.assertEqual(rc, 2, err)
+
+    def test_glob_with_more_matches_than_the_filesystem_cap(self):
+        """The blocked entry sorts after 250 others; every match is checked
+        by name even though only the first few are resolved."""
+        rc, err, _ = self.run_cmd("cat wide/*")
+        self.assertEqual(rc, 2, err)
+
+    def test_glob_matching_only_allowed_siblings_is_allowed(self):
+        rc, err, log = self.run_cmd("cat docs-only/hardware-specs-*/x.md")
+        self.assertEqual(rc, 0, err)
+        self.assertEqual(log, [])
+
+    def test_blank_role_in_a_workspace_policy_does_not_authorize(self):
+        """The implementer can write the workspace policy; an empty role
+        string must not make the unset-role default an authorized one."""
+        def setup(root):
+            cfg = root / ".agents"
+            cfg.mkdir()
+            (cfg / "cleanroom-policy.json").write_text(
+                json.dumps({"authorized_roles": ["", " "]}))
+        rc, err, log = self.fire(
+            "view_file",
+            {"TargetFile": "/home/dev/.claude/skills/board-expert/SKILL.md"},
+            project_var=None, setup=setup)
+        self.assertEqual(rc, 2, err)
+        self.assertEqual(log[0]["action"], "blocked")
+
+    def test_malformed_policy_values_fall_back_to_defaults(self):
+        """A null or wrongly typed list must not crash the hook (a crash is
+        exit 1, which is not a block on every harness)."""
+        def setup(root):
+            cfg = root / ".agents"
+            cfg.mkdir()
+            (cfg / "cleanroom-policy.json").write_text(json.dumps({
+                "blocked_path_patterns": None, "checkout_roots": "x",
+                "blocked_url_patterns": 7, "authorized_roles": None}))
+        rc, err, _ = self.fire(
+            "view_file",
+            {"TargetFile": "/home/dev/.claude/skills/board-expert/SKILL.md"},
+            project_var=None, setup=setup)
+        self.assertEqual(rc, 2, err)
+        rc, err, _ = self.fire(
+            "view_file", {"TargetFile": BLOCKED_PATH},
+            project_var=None, setup=setup)
+        self.assertEqual(rc, 2, err)
+
+    def test_command_text_naming_a_skill_is_denied_even_as_prose(self):
+        """Known false positive, chosen: a command line is judged whole. A
+        commit message or heredoc that names a firewalled skill is denied
+        (the same text through Write/Edit is exempt); the implementer can
+        say 'the dirty-side skills' instead."""
+        rc, err, _ = self.run_cmd('git commit -m "drop board-expert mention"')
+        self.assertEqual(rc, 2, err)
+
+
 if __name__ == "__main__":
     unittest.main()

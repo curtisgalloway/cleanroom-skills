@@ -1,0 +1,4 @@
+{"type":"assistant","message":{"content":[{"type":"text","text":"Checking how the bus map is described."},{"type":"tool_use","id":"f1","name":"Read","input":{"file_path":"/home/dev/.claude/skills/board-expert/SKILL.md"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"f1","content":"File contents elided in this fixture."}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"f2","name":"Skill","input":{"skill":"hardware-investigator"}}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"f3","name":"Bash","input":{"command":"git clone https://github.com/someone/hardware-specs-gpl.git /tmp/s"}}]}}
