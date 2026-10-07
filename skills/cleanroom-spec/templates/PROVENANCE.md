@@ -8,7 +8,7 @@ commit either to a public repository, attach them to an issue, or publish them i
 
 # Provenance attestation: <device> spec
 
-**Private record. Not for publication.** Clean-room output is never published (license-split
+**Private record. Not for publication.** Clean-room output is never published (driver-lab's license-split
 design, policy 1): this attestation and the spec stay with the person who ran the method. It
 records how the spec was made so that they can show it later, for example to counsel.
 
@@ -65,7 +65,7 @@ One row per session. "Saw" means what was in that session's context, not what it
 |---|---|---|
 | Five-check verifier (`templates/verifier-prompt.md`) | <PASS or FAIL> | <report path> |
 | Leak scan of the spec | <clean or findings> | <docs/provenance/<device>-scan-<date>.txt> |
-| Accuracy pass (`spec-verifier`, clean-room driver specs) | <PASS, FAIL or not run> | <record path> |
+| Accuracy pass (driver-lab's `spec-verifier`, clean-room driver specs) | <PASS, FAIL or not run> | <record path> |
 | Output scan of the driver (pre-merge) | <clean, findings or not yet> | <report path> |
 | Session audit (`cleanroom-implementer`) | <clean, findings or not yet> | <report path> |
 

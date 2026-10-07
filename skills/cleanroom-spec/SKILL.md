@@ -4,7 +4,7 @@ description: >-
   Produce a clean-room implementation spec for a single peripheral (Ethernet MAC, UART, GPIO,
   SD/MMC, USB, display/mailbox, I2C/SPI, …) so an engineer can write a from-scratch driver in a
   differently-licensed OS. Use when asked to spec a driver or research a hardware block before
-  coding it. Orchestrates os-investigator and the board-expert skill, and enforces the transfer
+  coding it. Orchestrates cleanroom-investigator and the board-expert skill, and enforces the transfer
   protocol, mandatory leak scanning, and the provenance ledger; consumer-side enforcement lives in
   cleanroom-implementer.
 ---
@@ -28,24 +28,24 @@ pinned provenance, the verifier's verdict, the scan reports, and the ledger.
 
 **Not the skill for source you own.** If the driver source is yours, your organization's, or
 compatibly licensed, the wall below is not just unnecessary but counterproductive — use
-`anchored-peripheral-spec`, which produces the same spec shape with every fact anchored to the
+`anchored-peripheral-spec` (a driver-lab skill, installed alongside), which produces the same spec shape with every fact anchored to the
 file:line it came from so a reviewer can verify it against the code.
 
 ## Compose, don't duplicate
 
-- **`os-investigator`** owns the *method* and the **clean-room rule**: return hardware FACTS and
+- **`cleanroom-investigator`** owns the *method* and the **clean-room rule**: return hardware FACTS and
   MECHANISM in your own words — register offsets, bit fields, IRQ numbers, init ordering, descriptor
   layouts — every fact tagged `[databook]`/`[standard]`/`[DT]`/`[source-observed]`, and **NEVER
   reproduce driver/firmware source code**, even when asked. Load and follow it for HALF 1. It also
   ships the mechanical scanner (`scripts/leak_scan.py`).
-- **The board-expert skill** (`board-expert`, or a `<board>-expert` stub) owns the *map*: the SoC/board addresses, IP identity,
+- **The board-expert skill** (driver-lab's `board-expert`, installed alongside, or a `<board>-expert` stub) owns the *map*: the SoC/board addresses, IP identity,
   quirks, cached references. Route "what address/IRQ/clock/compatible" questions through it.
   (Anything cached into a board-expert skill must itself be datasheet-cited or verifier-PASSed —
   a cache is a wall-crossing that replays into every context that loads the skill.)
 - **`cleanroom-implementer`** owns the *consumer side*: the standing rules and enforcement for
   agents writing code from landed specs — hook-based blocking of encumbered-source access, the
   spec-gap escalation path, the restricted implementer agent, and the session transcript audit.
-- **The verifier** loads `os-investigator` too — it is the canonical statement of allowed/forbidden
+- **The verifier** loads `cleanroom-investigator` too — it is the canonical statement of allowed/forbidden
   and the home of the scanner.
 - **This skill** owns the *spec shape*, the **transfer protocol**, the verification gate, the
   ledger, and the delegation pattern.
@@ -128,7 +128,7 @@ the hardware uses, then cite the datasheet. Every fact retagged from `[source-ob
 **Intake first: settle the forks before spawning anything.** Which board (and which variant or
 revision), which instance when the SoC places the IP more than once, which tree (anchored to the
 board's kernel at its ref, or generic from mainline head plus the public standards), and how far
-to go. Ask them in one structured batch as `board-expert/QUESTIONS.md` prescribes, with the
+to go. Ask them in one structured batch as `board-expert/QUESTIONS.md` (in driver-lab) prescribes, with the
 options the specs offer and a recommended default each; `spec: <board>` and `ip: <block>` are
 then passed to the subagent. A generic request ("a dwc3 spec") is legitimate: the IP spec, mainline
 at head, and the xHCI / USB standards are the inputs, and the resulting driver spec says it carries
@@ -136,7 +136,7 @@ no instance facts. When the subagent returns a **Needs decision** block instead 
 each item into a question, ask the batch, and re-run it with `decisions:` lines. Gaps that only
 affect completeness are not forks: they become TODOs in the spec, not questions.
 
-**Delegation here is a clean-room requirement, not just a context-saving nicety.** `os-investigator`
+**Delegation here is a clean-room requirement, not just a context-saving nicety.** `cleanroom-investigator`
 and the board-expert skills are *subagent roles*: their bodies fetch and read GPL/encumbered source.
 The main/orchestrating agent — the one that will write the differently-licensed target-OS code — must
 **never run those skills inline or read the source-OS tree / board cache itself.**
@@ -146,7 +146,7 @@ The main/orchestrating agent — the one that will write the differently-license
   (`.agents/agents/spec-investigator.md`, `subagent: true`) and invoke it deliberately rather than
   hoping the primary agent delegates, or launch it as its own task in the Agent Manager so the work
   runs in a separate context and its artifacts stay separate too. Either way, instruct it to load
-  `os-investigator` + the board-expert skill (`board-expert` with `spec:`/`ip:`, or the board's
+  `cleanroom-investigator` + the board-expert skill (`board-expert` with `spec:`/`ip:`, or the board's
   stub) and give it the spec subagent template filled in.
 - **A subagent's context is separate; its *credentials and environment* are not.** Delegation buys
   you a clean orchestrator context, not enforcement — that's Tier 1 and 2 in
@@ -213,7 +213,7 @@ attestation line. Take every value from the ledger, the reports and the session 
 reconstruct one from memory.
 
 **It is the user's private record and is never published**, and neither is the spec it
-describes: clean-room output is not published (license-split design, policy 1). Someone who
+describes: clean-room output is not published (driver-lab's license-split design, policy 1). Someone who
 wants a clean-room spec runs this method and keeps the spec and its attestation themselves. Keep
 both out of any public repository, issue or pull request; a project whose `docs/` is public keeps the
 spec and `docs/provenance/` out of version control or in a private store. Name machines by role in it, as
@@ -229,7 +229,7 @@ something, and reading the source is one tool call away. The fix is a sanctioned
    `- [open] <date> <spec section> <question>` — marks the code site `TODO(spec-gap)`, and
    **continues with other work**. Filing a gap is never a failure; reading the source costs the
    session's entire diff.
-2. The orchestrator sweeps open gaps into fresh `os-investigator` runs (the dirty side answers),
+2. The orchestrator sweeps open gaps into fresh `cleanroom-investigator` runs (the dirty side answers),
    amends the spec at a scratch copy, re-verifies, re-lands, adds a ledger line, and marks the gap
    `[resolved <date>]`.
 
@@ -251,7 +251,7 @@ session transcript audit** for every implementation session that touched the dri
 a contaminated session's diff is discarded wholesale and regenerated, never salvaged.
 
 ```
-python3 <os-investigator>/scripts/leak_scan.py <new driver sources...> \
+python3 <cleanroom-investigator>/scripts/leak_scan.py <new driver sources...> \
     --against <provenance-map files at repo@commit> --whitelist <nomenclature file>
 ```
 
@@ -281,7 +281,7 @@ without the implementer's deny rules.
 The fill-in prompt ships next to this skill at `templates/spec-subagent-prompt.md`. Read it when
 spawning, substitute every `<angle-bracket>` placeholder (peripheral identity, scratch path, target
 tree, board-expert skill name), and pass the result as the subagent's prompt. It encodes the
-transfer protocol, the os-investigator constraints, the self-scan, the attractant rules, the
+transfer protocol, the cleanroom-investigator constraints, the self-scan, the attractant rules, the
 usage-notice requirement, and the required coverage for both halves.
 
 ### Verify before saving (mandatory, every spec)
@@ -298,7 +298,7 @@ The verdict is **PASS + scan-report path**, or **FAIL + scan-report path** with 
 `{section, line range, one-line reason}` entries. Only a PASS lands in `docs/`.
 
 The accuracy pass this verifier leaves out, and the on-demand re-run of both after an edit or after
-the sources move, is `spec-verifier` § Clean-room driver specs: it runs this verifier unchanged,
+the sources move, is `spec-verifier` § Clean-room driver specs (a driver-lab skill, installed alongside): it runs this verifier unchanged,
 then checks every `[databook]`, `[standard]`, and `[DT]` fact against the cited document or device
 tree, and writes a verification record outside the spec.
 

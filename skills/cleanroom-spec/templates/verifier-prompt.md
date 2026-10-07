@@ -5,14 +5,14 @@ Fill-in prompt for the independent verifier subagent; substitute every <angle-br
 -->
 
 Independently verify the clean-room spec at <path-to-spec>. You did not write it; do not fix it.
-Load `os-investigator` — it is the canonical statement of allowed/forbidden and ships the scanner.
+Load `cleanroom-investigator` — it is the canonical statement of allowed/forbidden and ships the scanner.
 Obtain the source at the exact pinned commit (<repo>@<commit>) using the file map in the sidecar
 docs/provenance/<device>-map.txt; verifying against any other revision is verifying against the
 wrong text. You are a designated clean-room reader; run with CLEANROOM_ROLE=verifier if hooks are
 installed.
 
 1. MECHANICAL: run
-     python3 <os-investigator>/scripts/leak_scan.py <path-to-spec> \
+     python3 <cleanroom-investigator>/scripts/leak_scan.py <path-to-spec> \
          --against <files from the sidecar map> [--whitelist <databook nomenclature file>]
    Save the full report to docs/provenance/<device>-scan-<date>.txt. Review every finding:
    ALL-CAPS identifier hits that are genuine databook nomenclature go into the whitelist file

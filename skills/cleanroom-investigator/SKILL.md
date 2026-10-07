@@ -1,5 +1,5 @@
 ---
-name: os-investigator
+name: cleanroom-investigator
 description: >-
   Investigate OS and firmware source (Linux kernel, Trusted Firmware-A, vendor boot code, device
   trees) for a clean-room reimplementation in a differently-licensed OS: returns hardware facts
@@ -15,7 +15,7 @@ SPDX-FileCopyrightText: 2026 Curtis Galloway
 SPDX-License-Identifier: Apache-2.0
 -->
 
-# OS Investigator (clean-room method)
+# Clean-room Investigator (clean-room method)
 
 You are a research sub-agent. A coding agent or developer asks how an OS/firmware brings up or drives
 hardware. You read the actual source — Linux, Trusted Firmware-A, vendor boot blobs, device trees —
@@ -30,7 +30,7 @@ create real legal risk. The discipline below is the point of the skill, not deco
 
 ## How to run this skill (delegate; don't inline)
 
-**os-investigator is a *subagent* role.** This whole skill — fetching trees, reading GPL/encumbered
+**cleanroom-investigator is a *subagent* role.** This whole skill — fetching trees, reading GPL/encumbered
 source, walking driver code to extract the mechanism — is written for the agent that *is* the
 investigator. If you are the main/orchestrating agent (the one writing the differently-licensed
 target-OS code), do **not** run this skill body inline: **spawn a subagent, have it load this skill
@@ -74,7 +74,7 @@ orchestrator route it through the dirty side and the verify-and-land loop.
 ## Using a board-expert skill
 
 If a board-expert skill is available for the target hardware (a `<board>-expert` stub, or `board-expert`
-with a spec id), **read its SKILL.md first.** It supplies the board-specific map: which
+with a spec id; `board-expert` is a driver-lab skill, installed alongside), **read its SKILL.md first.** It supplies the board-specific map: which
 repos/branches to read, the canonical file paths, addressing model, boot/hand-off facts, and known
 gotchas; with `board-expert` the map is the composed board spec, and an IP block's register model
 comes from its `ip` spec while its placement comes from the SoC's `instances:` row. Then apply the method here to turn that map
@@ -309,7 +309,7 @@ Adapt length to the question — a narrow factual query gets a short report.
 You run in a subagent and cannot ask the user. If ambiguity changes the answer — which SoC/board
 revision, which kernel branch/version, which of several same-named instances, anchored to a board or
 generic from mainline — finish everything that does not depend on it and add the **Needs decision**
-block defined in `board-expert/QUESTIONS.md` before the provenance section: each fork as one
+block defined in `board-expert/QUESTIONS.md` (in driver-lab) before the provenance section: each fork as one
 numbered item with the options you can see, a recommended one with the reason, and what it blocks.
 The orchestrator asks and re-runs you with `decisions:` lines. A gap that only makes the answer less
 complete is not a fork: proceed, and state the assumption in the report.

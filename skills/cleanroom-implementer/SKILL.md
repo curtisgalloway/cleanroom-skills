@@ -4,7 +4,7 @@ description: >-
   The consumer side of the clean-room driver-porting pipeline: rules, enforcement, and auditing
   for agents that write target-OS driver code from a verified spec. Use when implementing or
   reviewing ported-driver code, installing enforcement (hooks, restricted agents, settings),
-  filing a spec-gap, or auditing a session for contamination. Companion to os-investigator and
+  filing a spec-gap, or auditing a session for contamination. Companion to cleanroom-investigator and
   cleanroom-spec, which produce the spec this skill consumes.
 ---
 
@@ -15,7 +15,7 @@ SPDX-License-Identifier: Apache-2.0
 
 # Clean-room implementer (consumer side)
 
-`os-investigator` and `cleanroom-spec` guard the *production* of a spec. This skill guards its
+`cleanroom-investigator` and `cleanroom-spec` guard the *production* of a spec. This skill guards its
 *consumption* — the implementing agent that, hitting a gap under goal pressure, does the
 highest-prior move in its training data for driver work: goes and reads the reference
 implementation. That one tool call is the contamination event the whole pipeline exists to prevent,
@@ -37,7 +37,7 @@ work unchanged under Claude Code with `.claude/` paths.
 
 1. Your implementation inputs are exactly: the landed spec (`docs/<device>-spec.md`), its cited
    public references (pre-fetched under `docs/references/`), and the target OS tree. Nothing else —
-   in particular, never load `os-investigator` or a board-expert skill: dirty-side roles whose
+   in particular, never load `cleanroom-investigator` or a board-expert skill: dirty-side roles whose
    bodies are maps into encumbered source.
 2. Never read, fetch, clone, grep, or search for Linux / U-Boot / TF-A / vendor-firmware source in
    any form — checkouts, mirrors, code-browser sites, gists, forum pastes — and never ask another
@@ -63,7 +63,7 @@ docs/spec-gaps/<device>.md
 ```
 
 Mark the code site `TODO(spec-gap)`, **continue with other work**. The orchestrator sweeps open
-gaps into fresh `os-investigator` runs, amends the spec through the full verify-and-land loop, and
+gaps into fresh `cleanroom-investigator` runs, amends the spec through the full verify-and-land loop, and
 marks the line `[resolved <date>]`. Filing a gap is never a failure and never costs you the task;
 reading the source costs the whole session's diff.
 

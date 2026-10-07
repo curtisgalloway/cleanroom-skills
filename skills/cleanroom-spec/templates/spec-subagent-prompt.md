@@ -15,18 +15,18 @@ source provenance as <repo>@<commit>. Do not return spec text or source file pat
 neither may enter the orchestrator before verification.
 
 CONSTRAINTS:
-- Load and follow `os-investigator` for method + the clean-room rule: facts/mechanism only, NEVER
+- Load and follow `cleanroom-investigator` for method + the clean-room rule: facts/mechanism only, NEVER
   source code; every constant and sequence step tagged [databook]/[standard]/[DT]/[source-observed];
   [source-observed] orderings marked "order not known to be required" and [source-observed]
   constants marked "re-derive on hardware"; register tables grouped per the databook, never
   driver-touch order; provenance pinned to an exact commit. Use `<board-expert>` for board
   specifics + cached references.
 - You are the designated clean-room reader: you read the source-OS/firmware so the orchestrating
-  agent never has to. `os-investigator` and `<board-expert>` are subagent roles; if a step needs
+  agent never has to. `cleanroom-investigator` and `<board-expert>` are subagent roles; if a step needs
   deep source reading, delegate it to a fresh subagent and keep only the clean facts — do not let
   encumbered source pile up in a context that also drafts the spec text.
 - Self-scan before returning if the source tree is local:
-    python3 <os-investigator>/scripts/leak_scan.py <scratch path> --against <source paths> \
+    python3 <cleanroom-investigator>/scripts/leak_scan.py <scratch path> --against <source paths> \
         [--whitelist <databook nomenclature>]
   Rewrite any finding. If sources were read remotely, note that the self-scan was skipped.
 - ATTRACTANT RULES: the spec body contains no source-tree file paths and no "Linux does X in
