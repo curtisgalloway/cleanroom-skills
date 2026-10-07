@@ -298,9 +298,10 @@ The verdict is **PASS + scan-report path**, or **FAIL + scan-report path** with 
 `{section, line range, one-line reason}` entries. Only a PASS lands in `docs/`.
 
 The accuracy pass this verifier leaves out, and the on-demand re-run of both after an edit or after
-the sources move, is `spec-verifier` § Clean-room driver specs (a driver-lab skill, installed alongside): it runs this verifier unchanged,
-then checks every `[databook]`, `[standard]`, and `[DT]` fact against the cited document or device
-tree, and writes a verification record outside the spec.
+the sources move, is `cleanroom-verifier` § Clean-room driver specs (it wraps driver-lab's
+`spec-verifier`, installed alongside): it runs this verifier unchanged, then checks every
+`[databook]`, `[standard]`, and `[DT]` fact against the cited document or device tree, and writes a
+verification record outside the spec.
 
 ### Verifier prompt template
 

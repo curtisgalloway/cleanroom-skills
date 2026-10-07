@@ -11,9 +11,12 @@ of driver-lab is in [TRANSITION.md](TRANSITION.md).
 
 ## What this is
 
-Three skills: `cleanroom-investigator`, `cleanroom-spec` and `cleanroom-implementer`. They depend
-on driver-lab's skills (`board-expert`, `anchored-peripheral-spec`, `spec-verifier`), installed
-alongside; driver-lab never depends on this repository. **Skill names are an interface**: other
+Four skills: `cleanroom-investigator`, `cleanroom-spec`, `cleanroom-verifier` and
+`cleanroom-implementer`. They depend on driver-lab's skills (`board-expert`,
+`anchored-peripheral-spec`, `spec-verifier`), installed alongside; driver-lab never depends on this
+repository. driver-lab's skills carry no clean-room rules: `cleanroom-investigator` wraps
+`board-expert` and `cleanroom-verifier` wraps `spec-verifier`, adding the wall. A clean-room rule
+belongs here, never in driver-lab. **Skill names are an interface**: other
 repositories hand off to these skills by name, so renaming one breaks them.
 
 ## Checks

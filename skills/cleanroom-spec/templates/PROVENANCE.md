@@ -65,7 +65,7 @@ One row per session. "Saw" means what was in that session's context, not what it
 |---|---|---|
 | Five-check verifier (`templates/verifier-prompt.md`) | <PASS or FAIL> | <report path> |
 | Leak scan of the spec | <clean or findings> | <docs/provenance/<device>-scan-<date>.txt> |
-| Accuracy pass (driver-lab's `spec-verifier`, clean-room driver specs) | <PASS, FAIL or not run> | <record path> |
+| Accuracy pass (`cleanroom-verifier`, clean-room driver specs) | <PASS, FAIL or not run> | <record path> |
 | Output scan of the driver (pre-merge) | <clean, findings or not yet> | <report path> |
 | Session audit (`cleanroom-implementer`) | <clean, findings or not yet> | <report path> |
 

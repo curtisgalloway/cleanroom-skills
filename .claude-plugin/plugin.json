@@ -1,7 +1,7 @@
 {
   "name": "cleanroom-skills",
   "version": "1.0.0",
-  "description": "The clean-room method for driver work against source you may not copy from: cleanroom-investigator reads the source and reports facts in its own words, cleanroom-spec turns them into a verified peripheral spec with a private provenance record, and cleanroom-implementer keeps the agent writing the driver from reading the source. Needs driver-lab's driver-porting plugin installed alongside.",
+  "description": "The clean-room method for driver work against source you may not copy from: cleanroom-investigator reads the source and reports facts in its own words, cleanroom-spec turns them into a verified peripheral spec with a private provenance record, cleanroom-verifier re-checks a spec's accuracy behind the wall, and cleanroom-implementer keeps the agent writing the driver from reading the source. Needs driver-lab's driver-porting plugin installed alongside.",
   "author": {
     "name": "curtisgalloway",
     "url": "https://github.com/curtisgalloway"

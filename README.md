@@ -22,9 +22,10 @@ attestation* (`PROVENANCE.md`) is the private record of how one spec was made. M
 - **What it is:** the published method. `cleanroom-investigator` reads the source and reports
   hardware facts in its own words, tagged by where each came from, and ships a leak scanner;
   `cleanroom-spec` turns those facts into a peripheral spec that an independent verifier must pass
-  (a leak scan and a transfer review) before anyone on the clean side reads it; `cleanroom-implementer` keeps
-  the agent writing the driver away from the source, with hooks, a Linux sandbox and session
-  audits.
+  (a leak scan and a transfer review) before anyone on the clean side reads it;
+  `cleanroom-verifier` re-checks a spec's accuracy without breaching the wall and writes a
+  verification record; `cleanroom-implementer` keeps the agent writing the driver away from the
+  source, with hooks, a Linux sandbox and session audits.
 - **Its output is never published.** No clean-room spec is published by this project, and the
   skills tell you not to publish yours. Anyone who wants a clean-room spec runs the method
   themselves and keeps the spec and a filled-in `PROVENANCE.md` (template in
@@ -36,9 +37,10 @@ attestation* (`PROVENANCE.md`) is the private record of how one spec was made. M
   spec where its license fits. Also not for NDA or vendor-licensed material you are not allowed
   to read at all, and not legal advice: none of this has had legal review.
 - **It depends on [driver-lab](https://github.com/curtisgalloway/driver-lab), installed
-  alongside.** The investigator gets its board facts from driver-lab's `board-expert`, and
-  `cleanroom-spec` hands accuracy re-checks to its `spec-verifier`. driver-lab never depends on
-  this repository.
+  alongside.** driver-lab's skills are neutral and know nothing of the wall; two skills here wrap
+  them and add it. `cleanroom-investigator` wraps `board-expert`, which supplies the board facts
+  and specs, and `cleanroom-verifier` wraps `spec-verifier`, which supplies the record format and
+  procedure. driver-lab never depends on this repository.
 - **Evidence that the method works** is driver-lab's frozen evaluation archive, at the commit this
   repository was split from:
   [evals/](https://github.com/curtisgalloway/driver-lab/tree/5d7eac2dabbb07265a61b56a3ad710eb9d03c454/evals)
@@ -53,6 +55,8 @@ attestation* (`PROVENANCE.md`) is the private record of how one spec was made. M
 | --- | --- |
 | You need a spec for a peripheral whose reference driver you may not copy from | `cleanroom-spec` (it runs `cleanroom-investigator` and a board expert as subagents) |
 | A question about how an OS or firmware drives some hardware, answered as facts, never source code | `cleanroom-investigator`, as a subagent; never in the context that writes code |
+| Re-verify a clean-room spec after an edit or after its sources moved, or check its accuracy | `cleanroom-verifier` |
+| Write or cache into a board spec behind the wall | `cleanroom-investigator`, with its `BOARD-SPECS.md` |
 | You are the agent writing code from a landed clean-room spec, or installing the enforcement for one | `cleanroom-implementer` |
 
 ## Installing
@@ -72,12 +76,6 @@ Install driver-lab's `driver-porting` plugin first (see its README), then this o
 codex plugin marketplace add curtisgalloway/cleanroom-skills
 codex plugin add cleanroom-skills@cleanroom-skills
 ```
-
-**While the split is in progress** driver-lab still ships its own copies of `cleanroom-spec` and
-`cleanroom-implementer`, and of `cleanroom-investigator` under its old name; they are removed
-there in the next step of the split. Until then, with both plugins installed, call these by their
-plugin-qualified names (`cleanroom-skills:cleanroom-spec` and so on) or disable driver-lab's
-copies.
 
 ## Tests
 
