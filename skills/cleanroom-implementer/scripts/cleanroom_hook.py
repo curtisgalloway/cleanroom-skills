@@ -135,19 +135,37 @@ NO_SCAN_COMMANDS = {
     "[", "stat", "true", "false", "export", "unset",
     # Build tools take "." as a project argument all the time; they run
     # workspace-controlled files, a documented limit. git is handled by
-    # GIT_READS below: only its content-reading subcommands scan.
+    # git: every subcommand scans except those in GIT_NO_SCAN below.
     "cargo", "make", "git",
 }
 
-# git subcommands that print file or history content. Handed to git, they read
-# the working directory (or the history of it) like a recursive search; every
-# other subcommand (status, add, commit, fetch, ...) does not scan.
-GIT_READS = {
-    "log", "show", "diff", "diff-tree", "diff-index", "diff-files", "archive",
-    "cat-file", "blame", "annotate", "grep", "format-patch", "show-branch",
-    "whatchanged", "stash", "restore", "checkout", "switch", "ls-files",
-    "ls-tree", "show-ref", "bundle", "difftool", "range-diff", "rev-list",
+# git subcommands that do not print file or history content. Every other
+# subcommand, including an unknown one or a user alias, scans the working
+# directory like a recursive search: fail closed, since `log -p`, `show`,
+# `archive`, `reflog -p`, `notes show` and aliases all read content.
+GIT_NO_SCAN = {
+    "status", "add", "commit", "fetch", "push", "pull", "init", "config",
+    "remote", "branch", "tag", "rev-parse", "mv", "rm", "worktree",
 }
+
+# git global options that take a separate argument (`git -C dir log`).
+GIT_ARG_OPTIONS = {"-C", "-c", "--git-dir", "--work-tree", "--namespace"}
+
+
+def _git_subcommand(words):
+    """The subcommand of a `git ...` word list, or None when there is none."""
+    skip = False
+    for word in words[1:]:
+        if skip:
+            skip = False
+            continue
+        if word in GIT_ARG_OPTIONS:
+            skip = True
+            continue
+        if word.startswith("-"):
+            continue
+        return word.lower()
+    return None
 
 # Recursive search tools: with no path argument they read the working
 # directory.
@@ -523,7 +541,8 @@ def _firewall_command(command, names, base, env, budget, depth=0):
         head = os.path.basename(words[0]).lower()
         searches = any(os.path.basename(w).lower() in SEARCH_TOOLS
                        for w in words)
-        git_read = head == "git" and any(w in GIT_READS for w in words[1:])
+        git_read = (head == "git" and
+                    _git_subcommand(words) not in GIT_NO_SCAN)
         scan = head not in NO_SCAN_COMMANDS or searches or git_read
         budget.skip_git = git_read and not searches
         any_exists = False

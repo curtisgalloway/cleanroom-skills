@@ -910,6 +910,15 @@ class TestSecondReviewFindings(HookCase):
             with self.subTest(line=line):
                 self.allow("run_command", {"CommandLine": line})
 
+    def test_an_unlisted_git_subcommand_or_alias_scans_the_directory(self):
+        """Fail closed: a read-capable subcommand missing from a list of
+        readers, or a user alias such as `git lg`, used to pass unscanned."""
+        for line in ("git reflog -p", "git notes show", "git lg",
+                     "git -c core.pager=cat cherry -v", "git"):
+            with self.subTest(line=line):
+                self.deny("run_command", {"CommandLine": line})
+        self.allow("run_command", {"CommandLine": "git -C src status"})
+
     def test_a_search_expression_is_not_expanded_as_a_path(self):
         hook = load_hook_module()
         hook.GLOB_NAMES = 5

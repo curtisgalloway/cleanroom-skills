@@ -209,9 +209,9 @@ checked against the working directory like a bare `grep -r pat`; an argument of 
 has no table for that names a path on disk is resolved like a path (a value of 1,024 characters or
 more, or one containing whitespace, is only matched by name, and a search expression under
 `pattern`, `query` and the like is never resolved as a path). `cargo` and `make` are not treated
-as reading a directory argument. `git` is treated as reading one only for its content-reading
-subcommands (`log`, `show`, `diff`, `archive`, `cat-file`, `grep` and the like); `git status`,
-`git add .` and `git commit` do not scan, and a scan for `git` skips `.git` itself. Known false
+as reading a directory argument. `git` is treated as reading one for every subcommand except a short
+list that prints no file or history content (`status`, `add`, `commit`, `fetch`, `push` and the
+like); an unknown subcommand or a user alias scans, and a scan for `git` skips `.git` itself. Known false
 denials, chosen over a silent allow: any tool call carrying a `query`-style key and no path scans
 the working directory, a pipeline such as `cargo test | grep fail` does too (the hook does not
 tell a search of stdin from one of the tree), and a working directory over the 3,000-entry budget

@@ -79,7 +79,7 @@ Mostly decisions that look like bugs until you know why they are there:
   a symlink is resolved, sibling names are denied alike in path, command, search and repo forms).
 - **`TestSecondReviewFindings`** (and one case in `test_session_audit.py`) — the second
   review-swarm on that commit: brace groups beyond the expansion rounds, `git` subcommands that
-  read content, a search expression not glob-expanded as a path, a malformed event and an
+  read content (every subcommand but a short no-scan list, so an alias scans too), a search expression not glob-expanded as a path, a malformed event and an
   internal error denying with their own message, and a cap overrun for an authorized role not
   logged as an access (and shown as `tool-target-unverified` in the audit).
 - `firewall_session.jsonl` — a Claude Code record that reads `board-expert`, loads
