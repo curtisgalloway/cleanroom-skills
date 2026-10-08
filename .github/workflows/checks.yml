@@ -21,11 +21,11 @@ jobs:
       # The portability scanner lives in public-skills (agent-agnostic-skills), which points
       # at cleanroom-implementer's scripts as its worked example. Pinned to a commit so an
       # upstream edit cannot change what runs here unreviewed; bump the ref to take a new one.
-      # Same commit as driver-lab's workflow pins.
+      # Bumped 2026-10-07 to a main commit after public-skills 10ab32b (LS12's link update).
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: curtisgalloway/public-skills
-          ref: d63e3f141421fd92b89b20e6e03c321337951aa1
+          ref: 5889be12554867297315c7cd5c99eee89667e1a4
           path: .public-skills
           persist-credentials: false
 
