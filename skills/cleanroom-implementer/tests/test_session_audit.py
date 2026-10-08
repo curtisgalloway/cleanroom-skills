@@ -60,6 +60,19 @@ class TestSessionAudit(unittest.TestCase):
         self.assertIn("license-marker", out)
         self.assertIn("discard the session's diff wholesale", out)
 
+    def test_a_cap_overrun_is_reported_as_unverified_not_as_a_match(self):
+        """The audit has no working directory; brace and nesting caps still
+        fire, and must not read as a firewall match."""
+        with tempfile.TemporaryDirectory() as tmp:
+            rec = {"type": "assistant", "message": {"content": [
+                {"type": "tool_use", "id": "t1", "name": "Bash",
+                 "input": {"command": "echo {a,b,c,d,e,f}{a,b,c,d,e,f}"}}]}}
+            f = pathlib.Path(tmp) / "s.jsonl"
+            f.write_text(json.dumps(rec) + "\n")
+            rc, out = run_audit(f)
+        self.assertEqual(rc, 1, out)
+        self.assertIn("[tool-target-unverified]", out)
+
     def test_clean_session_passes(self):
         rc, out = run_audit(FIX / "clean_session.jsonl")
         self.assertEqual(rc, 0, out)

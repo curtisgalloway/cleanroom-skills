@@ -75,7 +75,8 @@ Written/edited CONTENT is deliberately not scanned (a doc comment mentioning
 "trusted-firmware-a" must not block the edit); content-level leaks are the
 job of session_audit.py and the pre-merge output scan.
 
-Never breaks the session: malformed input or logging failure -> allow.
+Never breaks the session on malformed JSON or a logging failure (those allow). A
+cap overrun or an error while checking denies the implementer (fail closed).
 """
 
 import fnmatch
@@ -132,11 +133,39 @@ CWD_KEYS = {"cwd", "workdir", "workingdirectory"}
 NO_SCAN_COMMANDS = {
     "ls", "cd", "pushd", "popd", "pwd", "echo", "printf", "mkdir", "test",
     "[", "stat", "true", "false", "export", "unset",
-    # Version control and build tools take "." as a project argument all the
-    # time; they are not how a tree is read for content (git grep is a search
-    # tool and is caught as one).
-    "git", "cargo", "make",
+    # Build tools take "." as a project argument all the time; they run
+    # workspace-controlled files, a documented limit. git is handled by
+    # git: every subcommand scans except those in GIT_NO_SCAN below.
+    "cargo", "make", "git",
 }
+
+# git subcommands that do not print file or history content. Every other
+# subcommand, including an unknown one or a user alias, scans the working
+# directory like a recursive search: fail closed, since `log -p`, `show`,
+# `archive`, `reflog -p`, `notes show` and aliases all read content.
+GIT_NO_SCAN = {
+    "status", "add", "commit", "fetch", "push", "pull", "init", "config",
+    "remote", "branch", "tag", "rev-parse", "mv", "rm", "worktree",
+}
+
+# git global options that take a separate argument (`git -C dir log`).
+GIT_ARG_OPTIONS = {"-C", "-c", "--git-dir", "--work-tree", "--namespace"}
+
+
+def _git_subcommand(words):
+    """The subcommand of a `git ...` word list, or None when there is none."""
+    skip = False
+    for word in words[1:]:
+        if skip:
+            skip = False
+            continue
+        if word in GIT_ARG_OPTIONS:
+            skip = True
+            continue
+        if word.startswith("-"):
+            continue
+        return word.lower()
+    return None
 
 # Recursive search tools: with no path argument they read the working
 # directory.
@@ -335,7 +364,11 @@ def _braces(word):
             raise _LimitExceeded("brace expansion")
         out = nxt
         if not changed:
-            break
+            return out
+    # Groups were still being expanded when the rounds ran out: what is left
+    # is not the word the shell builds.
+    if any(re.search(r"\{[^{}]*,[^{}]*\}", w) for w in out):
+        raise _LimitExceeded("brace expansion")
     return out
 
 
@@ -344,6 +377,9 @@ class _Scan:
 
     def __init__(self):
         self.entries = SCAN_ENTRIES
+        # Set while checking a git content-reading command: git's own
+        # object store holds hashes, not the working tree it versions.
+        self.skip_git = False
 
 
 def _scan_dir(root, names, budget):
@@ -368,6 +404,8 @@ def _scan_dir(root, names, budget):
             hit = _name_in(entry, names)
             if hit:
                 return hit
+            if budget.skip_git and entry == ".git":
+                continue
             if os.path.islink(full):
                 hit = _name_in(os.path.realpath(full), names)
                 if hit:
@@ -503,7 +541,10 @@ def _firewall_command(command, names, base, env, budget, depth=0):
         head = os.path.basename(words[0]).lower()
         searches = any(os.path.basename(w).lower() in SEARCH_TOOLS
                        for w in words)
-        scan = head not in NO_SCAN_COMMANDS or searches
+        git_read = (head == "git" and
+                    _git_subcommand(words) not in GIT_NO_SCAN)
+        scan = head not in NO_SCAN_COMMANDS or searches or git_read
+        budget.skip_git = git_read and not searches
         any_exists = False
         for word in words:
             for variant in _braces(word):
@@ -532,10 +573,11 @@ def _firewall_command(command, names, base, env, budget, depth=0):
                 cur, target)
             if os.path.isdir(full):
                 cur = os.path.realpath(full)
-        elif searches and not any_exists and cur is not None:
+        elif (searches or git_read) and not any_exists and cur is not None:
             hit = _scan_dir(cur, names, budget)
             if hit:
                 return hit
+        budget.skip_git = False
     return None
 
 
@@ -545,8 +587,11 @@ def firewall_hit(key, text, pol, base=None, scan_dirs=True, budget=None):
     `base` is the directory relative paths resolve against; None means the
     filesystem is not consulted (the audit of a record from another machine).
     Path keys and command keys get the full treatment; any other key is
-    matched on the name alone, which is what stops the Skill tool, a subagent
-    prompt and a repository argument from naming a firewalled target.
+    matched by name, which is what stops the Skill tool, a subagent prompt and
+    a repository argument from naming a firewalled target. A short value with
+    no whitespace under such a key is also resolved on disk like a path
+    (symlinks, realpath), without scanning below it, unless the key is a
+    search expression (a pattern is not a path).
     """
     names = _firewall_names(pol)
     budget = budget or _Scan()
@@ -558,7 +603,7 @@ def firewall_hit(key, text, pol, base=None, scan_dirs=True, budget=None):
     else:
         hit = _name_in(text, names)
         if (not hit and base is not None and len(text) < 1024 and
-                not re.search(r"\s", text)):
+                key not in SEARCH_ARG_KEYS and not re.search(r"\s", text)):
             # An argument of a tool the hook has no table for may still be a
             # path (a symlink to a firewalled directory, say): resolve it the
             # way a path key is, without scanning below it.
@@ -728,13 +773,17 @@ def main():
         allow()
     if not isinstance(data, dict):
         allow()
-    tool, args, cwd_hint, session, extra = parse_event(data)
-    pol = load_policy(cwd_hint)
+    tool, args, cwd_hint, session, extra = "", {}, None, "", {}
+    pol = None
     try:
+        tool, args, cwd_hint, session, extra = parse_event(data)
+        pol = load_policy(cwd_hint)
         target, hit = pick_target(tool, args, pol,
                                   cwd=cwd_hint or os.getcwd())
     except Exception as exc:  # fail closed: an unreadable call is not allowed
-        target, hit = "", f"limit:internal error ({type(exc).__name__})"
+        target, hit = "", f"error:internal error ({type(exc).__name__})"
+        if pol is None:
+            pol = _sanitize(dict(DEFAULT_POLICY))
     if not hit:
         allow()
 
@@ -751,10 +800,19 @@ def main():
         "action": "allowed-role" if authorized else "blocked",
     }
     entry.update(extra)
+    unverified = hit.startswith(("limit:", "error:"))
+    if authorized and unverified:
+        allow()  # nothing encumbered was named: not an access to log
     log_entry(pol, entry, cwd_hint)
     if authorized:
         allow()
 
+    if hit.startswith("error:"):
+        deny(
+            f"cleanroom: BLOCKED {tool} - the firewall hit an "
+            f"{hit[len('error:'):]} and cannot verify this call, so it is "
+            f"denied. Retry; if it repeats, report it (the hook has a bug). "
+            f"This attempt was logged.")
     if hit.startswith("limit:"):
         deny(
             f"cleanroom: BLOCKED {tool} - {hit[len('limit:'):]} is too broad "

@@ -817,6 +817,8 @@ class TestFirewallFailsClosedOnLimits(unittest.TestCase):
         self.hook.pick_target = boom
         code, err, _ = self.run_main()
         self.assertEqual(code, 2, err)
+        self.assertIn("internal error", err)
+        self.assertNotIn("too broad", err)
 
 
 class TestFirewallFormParity(HookCase):
@@ -873,6 +875,79 @@ class TestFirewallFormParity(HookCase):
         self.allow("run_command", {"CommandLine": "git add ."})
         self.allow("run_command", {"CommandLine": "cargo build --manifest-path ."})
         self.deny("run_command", {"CommandLine": "git grep reset ."})
+
+
+class TestSecondReviewFindings(HookCase):
+    """The second review-swarm on the fail-closed commit (LS11 re-review)."""
+
+    def deny(self, tool, args, **kw):
+        rc, err, _ = self.fire(tool, args, setup=make_tree, **kw)
+        self.assertEqual(rc, 2, f"{tool} {args}: {err}")
+        return err
+
+    def allow(self, tool, args, **kw):
+        rc, err, log = self.fire(tool, args, setup=make_tree, **kw)
+        self.assertEqual(rc, 0, f"{tool} {args}: {err}")
+        self.assertEqual(log, [])
+
+    def test_brace_groups_beyond_the_expansion_rounds_are_a_deny(self):
+        """Four comma groups used to leave a literal group behind, so the
+        name the shell builds was never formed."""
+        err = self.deny("run_command", {
+            "CommandLine": "cat skills/board-e{x,x}{p,p}{e,e}{r,r}t/SKILL.md"})
+        self.assertIn("brace expansion", err)
+
+    def test_git_commands_that_read_content_scan_the_directory(self):
+        for line in ("git show", "git log -p", "git log -p -- .",
+                     "git archive HEAD", "git -C . diff",
+                     "git cat-file -p HEAD:x", "git whatchanged"):
+            with self.subTest(line=line):
+                self.deny("run_command", {"CommandLine": line})
+
+    def test_git_commands_that_read_nothing_still_do_not_scan(self):
+        for line in ("git status", "git add .", "git commit -m x",
+                     "git -C src log -p"):
+            with self.subTest(line=line):
+                self.allow("run_command", {"CommandLine": line})
+
+    def test_an_unlisted_git_subcommand_or_alias_scans_the_directory(self):
+        """Fail closed: a read-capable subcommand missing from a list of
+        readers, or a user alias such as `git lg`, used to pass unscanned."""
+        for line in ("git reflog -p", "git notes show", "git lg",
+                     "git -c core.pager=cat cherry -v", "git"):
+            with self.subTest(line=line):
+                self.deny("run_command", {"CommandLine": line})
+        self.allow("run_command", {"CommandLine": "git -C src status"})
+
+    def test_a_search_expression_is_not_expanded_as_a_path(self):
+        hook = load_hook_module()
+        hook.GLOB_NAMES = 5
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp).resolve()
+            (root / "d").mkdir()
+            for i in range(10):
+                (root / f"f{i}.txt").write_text("x\n")
+            _, hit = hook.pick_target(
+                "Grep", {"pattern": "*", "path": "d"},
+                dict(hook.DEFAULT_POLICY), cwd=str(root))
+        self.assertIsNone(hit)
+
+    def test_a_malformed_event_is_a_deny_not_a_crash(self):
+        rc, err, _ = self.fire("Bash", {"command": "ls"}, shape="claude",
+                               project_var=None, event_extra={"cwd": 5})
+        self.assertEqual(rc, 2, err)
+        self.assertIn("internal error", err)
+        self.assertNotIn("too broad", err)
+
+    def test_a_cap_overrun_for_an_authorized_role_is_not_logged_as_access(self):
+        def many(root):
+            make_tree(root)
+            for i in range(3500):
+                (root / "src" / f"f{i}.txt").write_text("x\n")
+        rc, err, log = self.fire("run_command", {"CommandLine": "grep -r x src"},
+                                 role="investigator", setup=many)
+        self.assertEqual(rc, 0, err)
+        self.assertEqual(log, [])
 
 
 if __name__ == "__main__":

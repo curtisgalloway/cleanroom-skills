@@ -72,10 +72,16 @@ Mostly decisions that look like bugs until you know why they are there:
   workspace policy, and the chosen false positive (a command line naming a skill is denied).
 - **`TestFirewallFailsClosedOnLimits`** / **`TestFirewallFormParity`** — the commit security
   review: each cap that truncates the check (scan entries, glob matches, brace words, nesting,
-  an internal error) denies the implementer and not the investigator, with a "narrower path"
-  message (these patch the module's constants in-process); and the same target is judged the same
+  an internal error) denies the implementer (these patch the module's constants in-process);
+  the scan-entries cap is also run through `main()` to pin the "narrower path" message and that
+  the investigator is unaffected; and the same target is judged the same
   in every form (pattern-only Grep/Glob scan the working directory, an unknown argument that is
   a symlink is resolved, sibling names are denied alike in path, command, search and repo forms).
+- **`TestSecondReviewFindings`** (and one case in `test_session_audit.py`) — the second
+  review-swarm on that commit: brace groups beyond the expansion rounds, `git` subcommands that
+  read content (every subcommand but a short no-scan list, so an alias scans too), a search expression not glob-expanded as a path, a malformed event and an
+  internal error denying with their own message, and a cap overrun for an authorized role not
+  logged as an access (and shown as `tool-target-unverified` in the audit).
 - `firewall_session.jsonl` — a Claude Code record that reads `board-expert`, loads
   `hardware-investigator` and clones `hardware-specs-gpl`; the audit must flag all three.
 
