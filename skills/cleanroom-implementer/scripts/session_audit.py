@@ -220,7 +220,9 @@ def scan_records(records, pol, min_code_lines):
             target, hit = pick_target(name, tu["input"], pol)
             if hit:
                 findings.append(
-                    (lineno, "tool-target",
+                    (lineno, "tool-target-unverified"
+                     if hit.startswith(("limit:", "error:"))
+                     else "tool-target",
                      f"{name} matched '{hit}' (target: {target[:120]})"))
         for key, text in results:
             if not text:

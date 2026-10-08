@@ -206,8 +206,19 @@ matches more than 5,000 paths, brace expansion exceeds 32 words, shell strings n
 deep, or the check itself errors, the implementer is denied with a message to give a narrower
 path (investigator and verifier are unaffected). A Grep or Glob call with only a pattern is
 checked against the working directory like a bare `grep -r pat`; an argument of a tool the hook
-has no table for that names a path on disk is resolved like a path. `git`, `cargo` and `make` are
-not treated as reading a directory argument (`git grep` still is).
+has no table for that names a path on disk is resolved like a path (a value of 1,024 characters or
+more, or one containing whitespace, is only matched by name, and a search expression under
+`pattern`, `query` and the like is never resolved as a path). `cargo` and `make` are not treated
+as reading a directory argument. `git` is treated as reading one only for its content-reading
+subcommands (`log`, `show`, `diff`, `archive`, `cat-file`, `grep` and the like); `git status`,
+`git add .` and `git commit` do not scan, and a scan for `git` skips `.git` itself. Known false
+denials, chosen over a silent allow: any tool call carrying a `query`-style key and no path scans
+the working directory, a pipeline such as `cargo test | grep fail` does too (the hook does not
+tell a search of stdin from one of the tree), and a working directory over the 3,000-entry budget
+(a large `target/` or `node_modules/`) denies them with the narrower-path message; the fix is a
+path argument. A search tool whose directory sits under a key the hook has no table for is
+resolved by name but not scanned below. An internal error in the check is a separate denial
+("internal error", not "too broad").
 
 One false positive is chosen, not accidental: a shell command line is judged whole, so a commit
 message or heredoc that names a firewalled skill is denied (the same words written through a
