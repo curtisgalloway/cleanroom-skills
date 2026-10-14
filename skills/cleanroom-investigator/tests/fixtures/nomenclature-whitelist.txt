@@ -1,7 +1,8 @@
 # SYNTHETIC TEST FIXTURE - databook nomenclature for the fictional Widgetron.
 # Real projects accrue one of these per IP block, in the project repo.
-# One identifier per line; '#' starts a comment; matching is case-insensitive.
-WIDGETRON_CTRL
-WIDGETRON_STATUS
-CTRL_SOFT_RESET
-STATUS_RESET_BUSY
+# One identifier per line, then '#' and the public reference that uses the
+# name; a line that is only a comment is skipped; matching is case-insensitive.
+WIDGETRON_CTRL        # Widgetron databook (invented), register table 2
+WIDGETRON_STATUS      # Widgetron databook (invented), register table 2
+CTRL_SOFT_RESET       # Widgetron databook (invented), CTRL bit 0
+STATUS_RESET_BUSY     # Widgetron databook (invented), STATUS bit 0

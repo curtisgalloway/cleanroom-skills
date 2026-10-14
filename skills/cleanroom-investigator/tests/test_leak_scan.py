@@ -16,6 +16,7 @@ are the one sanctioned exception.
 import pathlib
 import subprocess
 import sys
+import tempfile
 import unittest
 
 HERE = pathlib.Path(__file__).resolve().parent
@@ -93,6 +94,142 @@ class TestLeakScan(unittest.TestCase):
         rc, out = run_scan(FIX / "clean_spec.md", "--against",
                            HERE / "no-such-directory")
         self.assertEqual(rc, 2, out)
+
+
+# Invented device: a source file and two candidates, written to a temp dir so
+# the shared fixtures above are untouched. SuperSpeed and xHCI stand in for
+# public mixed-case standard terms; purple_latch_timeout is source-invented.
+WIDGET_SOURCE = """\
+/* SYNTHETIC TEST FIXTURE - invented device. */
+static int SuperSpeed;
+static int xHCI;
+static int purple_latch_timeout;
+"""
+STANDARD_ONLY_SPEC = "The gizmo reports SuperSpeed and xHCI capability bits.\n"
+WITH_INVENTED_SPEC = (STANDARD_ONLY_SPEC
+                      + "It also has a purple_latch_timeout field.\n")
+
+
+class TestWhitelistCitations(unittest.TestCase):
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.dir = pathlib.Path(tmp.name)
+        (self.dir / "src").mkdir()
+        (self.dir / "src" / "gizmo.c").write_text(WIDGET_SOURCE)
+        (self.dir / "standard_only.md").write_text(STANDARD_ONLY_SPEC)
+        (self.dir / "with_invented.md").write_text(WITH_INVENTED_SPEC)
+
+    def scan(self, candidate, whitelist_text, *flags):
+        wl = self.dir / "whitelist.txt"
+        wl.write_text(whitelist_text)
+        return run_scan(self.dir / candidate, "--against", self.dir / "src",
+                        "--whitelist", wl, *flags)
+
+    def test_no_whitelist_flags_mixed_case_standard_terms(self):
+        """Baseline: without an entry these are high-signal hits."""
+        rc, out = run_scan(self.dir / "standard_only.md", "--against",
+                           self.dir / "src")
+        self.assertEqual(rc, 1, out)
+        self.assertIn("[idents] 2 high-signal", out)
+
+    def test_cited_mixed_case_entries_suppress_hits(self):
+        rc, out = self.scan(
+            "standard_only.md",
+            "SuperSpeed  # USB 3.2 spec, section 3.1\n"
+            "xHCI  # xHCI spec, section 1.1\n")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("[idents] 0 high-signal", out)
+        self.assertIn("[whitelist] 0 uncited", out)
+
+    def test_citation_may_contain_hash_and_whitelist_is_case_insensitive(self):
+        rc, out = self.scan(
+            "standard_only.md",
+            "# a comment-only line is not an entry\n"
+            "superspeed  # USB 3.2 spec, table #4\n"
+            "XHCI\t#\txHCI spec, section 1.1 # see also errata\n")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("[whitelist] 0 uncited", out)
+
+    def test_uncited_entries_are_listed_but_still_suppress_by_default(self):
+        rc, out = self.scan(
+            "standard_only.md",
+            "SuperSpeed\n"
+            "xHCI   #   \n"
+            "# comment only\n")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("[idents] 0 high-signal", out)
+        self.assertIn("[whitelist] 2 uncited entr(ies)", out)
+        self.assertIn("  - SuperSpeed  (whitelist L1)", out)
+        self.assertIn("  - xHCI  (whitelist L2)", out)
+        self.assertIn("verdict: clean", out)
+        self.assertIn("2 uncited whitelist entr(ies)", out)
+
+    def test_crlf_whitelist_and_hash_only_comment(self):
+        rc, out = self.scan(
+            "standard_only.md",
+            "SuperSpeed  # USB 3.2 spec, section 3.1\r\n"
+            "xHCI  ##\r\n",
+            "--require-citations")
+        self.assertEqual(rc, 1, out)
+        self.assertIn("[whitelist] 1 uncited entr(ies)", out)
+        self.assertIn("  - xHCI  (whitelist L2)", out)
+
+    def test_require_citations_stops_uncited_entries_suppressing(self):
+        rc, out = self.scan(
+            "standard_only.md",
+            "SuperSpeed\n"
+            "xHCI  # xHCI spec, section 1.1\n",
+            "--require-citations")
+        self.assertEqual(rc, 1, out)
+        self.assertIn("[whitelist] 1 uncited entr(ies)", out)
+        self.assertIn("[idents] 1 high-signal", out)
+        self.assertIn("  - SuperSpeed  (in ", out)
+        self.assertIn("1 uncited whitelist entr(ies)", out)
+
+    def test_require_citations_reports_uncited_entry_absent_from_candidate(self):
+        """An uncited entry is a finding even when nothing uses it."""
+        rc, out = self.scan(
+            "standard_only.md",
+            "SuperSpeed  # USB 3.2 spec, section 3.1\n"
+            "xHCI  # xHCI spec, section 1.1\n"
+            "unused_name\n",
+            "--require-citations")
+        self.assertEqual(rc, 1, out)
+        self.assertIn("  - unused_name  (whitelist L3)", out)
+        self.assertIn("[idents] 0 high-signal", out)
+
+    def test_cited_entry_absent_from_candidate_is_harmless(self):
+        rc, out = self.scan(
+            "standard_only.md",
+            "SuperSpeed  # USB 3.2 spec, section 3.1\n"
+            "xHCI  # xHCI spec, section 1.1\n"
+            "NeverUsedTerm  # Example spec, section 9\n",
+            "--require-citations")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("[whitelist] 0 uncited", out)
+
+    def test_source_only_mixed_case_identifier_is_still_a_finding(self):
+        rc, out = self.scan(
+            "with_invented.md",
+            "SuperSpeed  # USB 3.2 spec, section 3.1\n"
+            "xHCI  # xHCI spec, section 1.1\n",
+            "--require-citations")
+        self.assertEqual(rc, 1, out)
+        self.assertIn("[idents] 1 high-signal", out)
+        self.assertIn("  - purple_latch_timeout  (in ", out)
+
+    def test_cited_entry_appearing_twice_uncited_is_not_reported(self):
+        """A cited entry wins over a bare duplicate of the same name."""
+        rc, out = self.scan(
+            "standard_only.md",
+            "SuperSpeed\n"
+            "superspeed  # USB 3.2 spec, section 3.1\n"
+            "xHCI  # xHCI spec, section 1.1\n",
+            "--require-citations")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("[whitelist] 0 uncited", out)
 
 
 if __name__ == "__main__":

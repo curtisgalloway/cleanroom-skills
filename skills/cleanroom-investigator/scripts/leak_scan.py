@@ -20,6 +20,24 @@ spec's provenance map) for two things:
      ALL-CAPS hits are listed separately as whitelist candidates, since
      databook register/field names are often all-caps.
 
+Whitelist format: one identifier per line, then '#', then the public
+reference that uses the name, for example
+
+    SuperSpeed  # USB 3.2 spec, section 3.1
+
+A line that is only a comment stays a comment. An entry with nothing after
+the identifier, or with an empty comment, is UNCITED. Matching is
+case-insensitive, and a cited entry suppresses a hit whatever the case of
+the name (so a mixed-case standard term can be whitelisted). Only the first
+'#' separates the identifier from the citation, so a citation may contain
+'#'. If an identifier appears both cited and uncited, the cited entry wins.
+
+By default uncited entries still suppress hits (so older whitelists keep
+working) but the report lists them in a "[whitelist]" section. With
+--require-citations, uncited entries do NOT suppress hits, are reported as
+findings (whether or not the candidate uses them), and the exit status is 1.
+The flag has no effect without --whitelist.
+
 The report cites locations, lengths, and digests but NEVER prints matched
 text from the sources. (Identifier names are printed: a bare name is
 needed to act on the finding and is not protectable expression.)
@@ -108,6 +126,38 @@ def looks_code_shaped(ident):
     return re.search(r"[a-z][A-Z]", ident) is not None
 
 
+def parse_whitelist(text):
+    """Parse whitelist text into (cited, uncited).
+
+    cited:   {identifier_lowercased: citation}
+    uncited: [(line_number, identifier_as_written)], in file order, one per
+             identifier (case-insensitive) and only if no cited entry for the
+             same identifier exists.
+    """
+    cited = {}
+    uncited = []
+    for ln, raw in enumerate(text.split("\n"), 1):
+        raw = raw.rstrip("\r")
+        ident, _, comment = raw.partition("#")
+        ident = ident.strip()
+        if not ident:
+            continue
+        citation = comment.strip().lstrip("#").strip()
+        if citation:
+            cited.setdefault(ident.lower(), citation)
+        else:
+            uncited.append((ln, ident))
+    seen = set()
+    kept = []
+    for ln, ident in uncited:
+        key = ident.lower()
+        if key in cited or key in seen:
+            continue
+        seen.add(key)
+        kept.append((ln, ident))
+    return cited, kept
+
+
 def find_runs(cand_toks, src_toks, k):
     """Maximal matching token runs between candidate and one source token
     stream. `covered` (candidate indices already reported) is threaded by
@@ -175,7 +225,15 @@ def main():
                          "(the provenance map, at the pinned commit)")
     ap.add_argument("--whitelist", metavar="FILE",
                     help="hardware/databook nomenclature, one identifier "
-                         "per line, '#' comments (case-insensitive)")
+                         "per line followed by '#' and its public-reference "
+                         "citation, e.g. 'SuperSpeed  # USB 3.2 spec, "
+                         "section 3.1' (case-insensitive; a line that is "
+                         "only a comment is skipped). Uncited entries still "
+                         "suppress hits but are listed in the report")
+    ap.add_argument("--require-citations", action="store_true",
+                    help="with --whitelist: uncited entries do not suppress "
+                         "hits, are reported as findings, and make the exit "
+                         "status 1")
     ap.add_argument("--min-run", type=int, default=10,
                     help="min matching-run length in tokens (default 10)")
     ap.add_argument("--min-alpha", type=int, default=5,
@@ -189,11 +247,12 @@ def main():
         die("--k must be <= --min-run")
 
     whitelist = set()
+    uncited = []
     if args.whitelist:
-        for line in read_text(args.whitelist).splitlines():
-            line = line.split("#", 1)[0].strip()
-            if line:
-                whitelist.add(line.lower())
+        cited, uncited = parse_whitelist(read_text(args.whitelist))
+        whitelist = set(cited)
+        if not args.require_citations:
+            whitelist.update(ident.lower() for _, ident in uncited)
 
     sources = collect_sources(args.against)
     src_data = []          # (path, tokens, line_numbers)
@@ -209,7 +268,21 @@ def main():
     print(f"  candidates : {', '.join(args.candidate)}")
     print(f"  against    : {len(sources)} source file(s)")
     print(f"  params     : min-run={args.min_run} min-alpha={args.min_alpha} "
-          f"k={args.k} whitelist={len(whitelist)} entries")
+          f"k={args.k} whitelist={len(whitelist)} entries"
+          f"{' require-citations' if args.require_citations else ''}")
+
+    if args.whitelist:
+        if not uncited:
+            note = ""
+        elif args.require_citations:
+            note = " - not suppressing hits (--require-citations)"
+        else:
+            note = (" - still suppressing hits; add '# <public reference>' "
+                    "to each")
+        print(f"\n[whitelist] {len(uncited)} uncited entr(ies) in "
+              f"{args.whitelist}{note}")
+        for ln, ident in uncited:
+            print(f"  - {ident}  (whitelist L{ln})")
 
     total_runs = 0
     total_high = 0
@@ -261,15 +334,20 @@ def main():
             print(f"  - {ident}  (in {sp})  candidate {loc}{more}")
         print(f"[idents] {len(caps)} ALL-CAPS identifier(s) shared with "
               f"source - review: databook nomenclature belongs in the "
-              f"whitelist, anything else is a failure")
+              f"whitelist with a citation, anything else is a failure")
         for ident, sp, lines in caps:
             loc = ",".join(f"L{n}" for n in lines[:5])
             more = f" +{len(lines) - 5}" if len(lines) > 5 else ""
             print(f"  - {ident}  (in {sp})  candidate {loc}{more}")
 
     findings = total_runs + total_high + total_caps
+    if args.require_citations:
+        findings += len(uncited)
+    extra = (f", {len(uncited)} uncited whitelist entr(ies)"
+             if args.whitelist else "")
     print(f"\nsummary: {total_runs} run(s), {total_high} high-signal "
-          f"identifier(s), {total_caps} all-caps identifier(s) to review")
+          f"identifier(s), {total_caps} all-caps identifier(s) to review"
+          f"{extra}")
     print("verdict:", "FINDINGS - review required" if findings else "clean")
     sys.exit(1 if findings else 0)
 

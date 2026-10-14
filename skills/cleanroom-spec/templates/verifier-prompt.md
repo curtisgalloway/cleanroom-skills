@@ -13,10 +13,15 @@ installed.
 
 1. MECHANICAL: run
      python3 <cleanroom-investigator>/scripts/leak_scan.py <path-to-spec> \
-         --against <files from the sidecar map> [--whitelist <databook nomenclature file>]
-   Save the full report to docs/provenance/<device>-scan-<date>.txt. Review every finding:
-   ALL-CAPS identifier hits that are genuine databook nomenclature go into the whitelist file
-   (record that you did), everything else is a failure.
+         --against <files from the sidecar map> \
+         [--whitelist <nomenclature file> --require-citations]
+   Save the full report to docs/provenance/<device>-scan-<date>.txt. Review every finding. An
+   identifier hit, whatever its case, that is the name a cited public reference (databook,
+   standard, datasheet) uses goes into the whitelist file as `<identifier>  # <reference>,
+   <section or table>`; check each new entry's citation yourself against that reference. A name
+   found only in source-OS code fails whatever its case, and so does any entry without a citation
+   (--require-citations makes the scanner report those). Record which entries you added, with
+   their citations.
 2. LEAK JUDGMENT: confirm the spec contains NO source code from <repo(s)>: no verbatim or
    near-verbatim code in any language, no struct/enum/#define/macro/function bodies or initializer
    tables, no copied code comments, no prose that tracks a function statement-by-statement. You may
