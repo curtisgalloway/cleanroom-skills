@@ -45,7 +45,11 @@ Then:
    included.
 2. Check the `skills:` names against what `/skills` lists. A skill installed from a plugin may be
    listed with a plugin prefix (`cleanroom-skills:cleanroom-implementer`); use that name. Each
-   agent stops with "skill not loaded" when its preload failed.
+   agent stops with "skill not loaded" when its preload failed. Install the dirty-side skills
+   (`cleanroom-investigator`, `board-expert`) at user level or through the plugin, **never under
+   the project's `.claude/skills/`**: a directory there named after one makes the implementer's
+   hook deny every recursive search from the project root, the same trap as an agent file of that
+   name.
 3. Do **not** also install `cleanroom_hook.py` as a session-wide hook in `settings.json`. The
    investigator and verifiers run in the same session and process, so a session-wide hook would
    block them and `CLEANROOM_ROLE` cannot tell them apart. The implementer's frontmatter hook is
