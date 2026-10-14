@@ -95,6 +95,28 @@ class TestLeakScan(unittest.TestCase):
                            HERE / "no-such-directory")
         self.assertEqual(rc, 2, out)
 
+    def test_files_skipped_under_a_directory_are_reported(self):
+        # A directory is filtered by extension, so a Kconfig or a .yaml
+        # binding beside the C files was once left out without a word and
+        # its absence read as a clean scan (2026-10, 20 of 25 files read).
+        # Naming such a file outright still scans it.
+        with tempfile.TemporaryDirectory() as tmp:
+            src = pathlib.Path(tmp) / "src"
+            src.mkdir()
+            (src / "drv.c").write_text("int fake_probe(void) { return 0; }\n")
+            (src / "Kconfig").write_text("config FAKE_DEVICE\n")
+            (src / "binding.yaml").write_text("compatible: fake,device\n")
+            rc, out = run_scan(FIX / "clean_spec.md", "--against", src)
+            self.assertEqual(rc, 0, out)
+            self.assertIn("1 source file(s)", out)
+            self.assertIn("[skipped] 2 file(s)", out)
+            self.assertIn("Kconfig", out)
+            self.assertIn("binding.yaml", out)
+            rc, out = run_scan(FIX / "clean_spec.md", "--against",
+                               src / "drv.c", src / "Kconfig")
+            self.assertIn("2 source file(s)", out)
+            self.assertNotIn("[skipped]", out)
+
 
 # Invented device: a source file and two candidates, written to a temp dir so
 # the shared fixtures above are untouched. SuperSpeed and xHCI stand in for

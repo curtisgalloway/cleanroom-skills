@@ -83,21 +83,30 @@ def read_text(path):
 
 
 def collect_sources(paths):
-    """Expand files/dirs into a list of source files (dirs filtered by ext)."""
-    out = []
+    """Expand files/dirs into (source files, skipped files).
+
+    Directories are filtered by extension; a file named outright is always
+    read. The skipped list is reported, because a file left out without a
+    word reads as a clean scan of it.
+    """
+    out, skipped = [], []
     for p in paths:
         pp = pathlib.Path(p)
         if pp.is_dir():
             for f in sorted(pp.rglob("*")):
-                if f.is_file() and f.suffix in SOURCE_EXTS:
+                if not f.is_file():
+                    continue
+                if f.suffix in SOURCE_EXTS:
                     out.append(f)
+                else:
+                    skipped.append(f)
         elif pp.is_file():
             out.append(pp)
         else:
             die(f"source path not found: {p}")
     if not out:
         die("no source files found under --against paths")
-    return out
+    return out, skipped
 
 
 def tokenize(text):
@@ -254,7 +263,7 @@ def main():
         if not args.require_citations:
             whitelist.update(ident.lower() for _, ident in uncited)
 
-    sources = collect_sources(args.against)
+    sources, skipped = collect_sources(args.against)
     src_data = []          # (path, tokens, line_numbers)
     src_idents = {}        # identifier -> first source path seen in
     for sp in sources:
@@ -270,6 +279,16 @@ def main():
     print(f"  params     : min-run={args.min_run} min-alpha={args.min_alpha} "
           f"k={args.k} whitelist={len(whitelist)} entries"
           f"{' require-citations' if args.require_citations else ''}")
+    if skipped:
+        print(f"\n[skipped] {len(skipped)} file(s) under --against "
+              f"directories were NOT read (extension not one of "
+              f"{' '.join(sorted(SOURCE_EXTS))}); name a file outright "
+              f"to scan it")
+        for f in skipped[:args.max_report]:
+            print(f"  - {f}")
+        if len(skipped) > args.max_report:
+            print(f"  ... {len(skipped) - args.max_report} more suppressed "
+                  f"(--max-report)")
 
     if args.whitelist:
         if not uncited:

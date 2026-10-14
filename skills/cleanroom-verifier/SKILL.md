@@ -83,7 +83,18 @@ The kind produced by `cleanroom-spec`. Two passes, and the first is not this ski
 
 - **Claims** are keyed by section and ordinal (tables: `<Section>/<table>/<row name>`; sequences:
   `<Section>/<step number>`).
-- **Two verifiers** for the register map and the init sequence.
-- **Record location**: `resources/<spec-basename>.verify.md` beside the spec, or the project's
-  `docs/provenance/` directory when the spec's ledger already lives there; `spec_file` relative to
+- **Two verifiers** for the register map and the init sequence on a first review: one reads the
+  numbers (register tables, bit fields, constants), the other the sequencing (init, reset and
+  power steps). A **recheck of a repaired candidate** may use one combined reader, which
+  re-reads every prior finding and every section the repair changed (worked in a board
+  bring-up's rechecks, 2026-10-14).
+- **One record per round.** A recheck writes a new record and never appends to the earlier one.
+  The record opens with the same header lines as the transfer review's
+  (`cleanroom-spec/templates/verifier-prompt.md`): candidate path and full sha256, round and
+  prior record, pins, verdict. Then come `spec-verifier`'s per-claim entries, and on a recheck a
+  `Prior findings` table with one row per earlier finding, resolved or still open.
+- **Record location**: `resources/<spec-basename>.verify-v<N>-<scope>-round<K>.md` beside the
+  spec, or the project's `docs/provenance/` directory when the spec's ledger already lives there;
+  `<scope>` is `numbers`, `sequencing` or `combined`, and K counts that scope's reviews of this
+  candidate from 1, so parallel readers and rechecks never share a file; `spec_file` relative to
   the record's parent's parent. The record itself must pass `leak_scan.py`.

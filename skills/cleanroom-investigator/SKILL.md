@@ -221,6 +221,11 @@ Rules that follow from the tags:
 
 - Could a reader paste any of this into a compiler? → Rewrite as description or table.
 - Any ~15+ word run matching the source wording? → Re-express.
+- Any phrase in quotation marks outside the usage notice? Each one must be the name of a cited standard term, databook
+  name or device-tree binding property, with its citation. A short quoted phrase that follows the
+  source's own wording (a comment, a log message, a function's purpose) is a leak no scanner
+  flags: three of four transfer-review FAILs in one 2026-10 run were exactly this. Unquote it and
+  say it in your own words.
 - Any `struct`/macro/function body, even small? → Replace with a field table or "the layout is …" prose.
 - Am I mirroring the file's structure/naming step-by-step? Are my tables grouped per the databook,
   not driver-touch order? → Reframe in the hardware's organization.
@@ -264,6 +269,11 @@ comment stays a comment. If a name appears both cited and uncited, the cited ent
 *uncited*: by default it still suppresses hits but the report lists it in a `[whitelist]` section;
 with `--require-citations` it does not suppress, is reported as a finding, and the exit status is 1.
 Use `--require-citations` for the verifier and the self-scan.
+
+**Pass `--against` the files in your provenance map, by path.** A directory is filtered to source
+extensions (`.c .h .s .S .rs .dts .dtsi .inc .asm`); anything else under it (a Kconfig, a `.yaml`
+binding, a Makefile) is not read, and the report lists it under `[skipped]`. A file named outright
+is always read. Read the `against` count and the `[skipped]` list before trusting a clean result.
 
 The report cites line ranges, lengths, and digests — it **never reproduces matched text** (bare
 identifier names are printed; a name is needed to act on the finding and isn't protectable

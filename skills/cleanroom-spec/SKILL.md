@@ -294,8 +294,12 @@ hardware, and folding it in would dilute the one job that must be done adversari
 must never quote the source *or* the offending spec passages (quoting would re-leak them into the
 main context). Section + line-range references only.
 
-The verdict is **PASS + scan-report path**, or **FAIL + scan-report path** with a list of
-`{section, line range, one-line reason}` entries. Only a PASS lands in `docs/`.
+The verdict is **PASS + record path**, or **FAIL + record path** with a list of
+`{section, line range, one-line reason}` entries. The record is a new file per review round,
+`docs/provenance/<device>-transfer-review-v<N>-round<K>.md`, in the fixed shape the template gives: the
+candidate's path and full sha256, the round (a first review, or a recheck naming the prior
+record), the pins, the scan-report path, the findings, and on a recheck the status of every prior
+finding. A recheck writes a new record; it never appends to an old one. Only a PASS lands in `docs/`.
 
 The accuracy pass this verifier leaves out, and the on-demand re-run of both after an edit or after
 the sources move, is `cleanroom-verifier` § Clean-room driver specs (it wraps driver-lab's
@@ -305,8 +309,8 @@ verification record outside the spec.
 
 ### Verifier prompt template
 
-The fill-in prompt ships at `templates/verifier-prompt.md`. Substitute the placeholders (spec path,
-pinned `<repo>@<commit>`, sidecar map path) and pass it verbatim to the fresh verifier subagent. It
+The fill-in prompt ships at `templates/verifier-prompt.md`. Substitute the placeholders (spec path and
+its sha256, version and round, pinned `<repo>@<commit>`, sidecar map path) and pass it verbatim to the fresh verifier subagent. It
 walks the five checks above and pins the required verdict format.
 
 ## Quality bar
