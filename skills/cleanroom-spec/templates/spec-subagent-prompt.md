@@ -36,8 +36,13 @@ CONSTRAINTS:
 - ATTRACTANT RULES: the spec body contains no source-tree file paths and no "Linux does X in
   file Y" narration — state facts as hardware facts. The [source-observed] tag says a fact came
   from code; it never says where.
-- OPEN the spec with the CLEAN-ROOM USAGE NOTICE (required section 1), including the spec-gap,
-  [source-observed], provenance-dir, pre-merge-gate, and hash-match clauses.
+- OPEN the spec with the CLEAN-ROOM USAGE NOTICE (required section 1): copy
+  <cleanroom-spec>/templates/usage-notice.md between its begin and end markers, markers included,
+  below the spec title. Replace <device> and change nothing else; do not compose or reword it.
+  Then run
+    python3 <cleanroom-investigator>/scripts/notice_check.py <scratch path>
+  and fix everything it reports, together with the self-scan above, before returning. A spec that
+  fails either check is not done.
 - HALF 2 is the TARGET tree at <path> — read it directly and cite file:line.
 
 Cover (HALF 1 clean-room): IP identity & provenance; canonical references TABLE; register map
