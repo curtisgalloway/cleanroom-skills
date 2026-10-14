@@ -204,9 +204,12 @@ lengths, and hashes rather than reproducing matched source passages.
 
 A failure returns section and line references plus reasons, never offending text. A fresh author
 repairs the scratch file, and another verification follows. After two failures on the same section,
-the workflow stops and escalates the verdict to a person. If source is the only authority for a
-mechanism, that person must decide whether and how it can be expressed within the workflow. The
-absence of another authority does not permit relabeling a boundary failure as a pass.
+the workflow stops and escalates the verdict to a person. Only failures from this independent
+verification count: defects the author's own mechanical self-check (`notice_check.py`,
+`leak_scan.py`) catches before the spec is returned do not (user approved 2026-10-14). If source is
+the only authority for a mechanism, that person must decide whether and how it can be expressed
+within the workflow. The absence of another authority does not permit relabeling a boundary failure
+as a pass.
 
 On a boundary pass, the orchestrator lands `docs/<device>-spec.md`, hashes its contents, and appends
 the revision and scan report to `docs/provenance-ledger.md`. Scan reports live under

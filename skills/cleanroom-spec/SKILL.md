@@ -75,19 +75,15 @@ the hardware uses, then cite the datasheet. Every fact retagged from `[source-ob
 
 ## Required structure of every spec
 
-1. **Clean-room usage notice (top of the document)** — a short notice telling every consumer of
-   the spec, human or agent: this spec was produced from encumbered source by a designated
-   clean-room reader and independently verified; do **NOT** read the original source-OS/firmware
-   code yourself; this spec plus its cited public references are the only implementation inputs.
-   Further clauses: **on any gap, file a spec-gap** (append the question to
-   `docs/spec-gaps/<device>.md`, mark the code site `TODO(spec-gap)`, continue with other work —
-   never open the source; the urge to "check the driver" *is* a spec-gap);
-   **`[source-observed]` facts are never verified against the source** — verify on hardware or
-   file a spec-gap; **do not open `docs/provenance/`** — it exists for verifiers and counsel, not
-   implementers; **code written from this spec must pass the pre-merge gate** (output scan + clean
-   session audits — see the ledger) before it lands; and **if this spec's content hash no longer
-   matches its latest ledger PASS line, treat it as unverified** — it has been edited since
-   verification.
+1. **Clean-room usage notice (top of the document)** — a notice telling every consumer of the
+   spec, human or agent, not to read the original source and what to do instead. The normative
+   text is `templates/usage-notice.md`: copy it between its begin and end markers, fill in
+   `<device>`, change nothing else, and do not compose it from memory. It carries seven labeled
+   clauses (do not read the source; only inputs; gaps; `[source-observed]` facts; the provenance
+   directory; the pre-merge gate; the hash match) and names no version or hash, so it cannot go
+   stale. `cleanroom-investigator/scripts/notice_check.py <spec>` checks it mechanically, together
+   with the `<repo>@<commit>` pin of item 12; the writer runs it before returning the spec and the
+   verifier runs it first.
 2. **IP identity & provenance** — vendor + IP family + specific instance/revision; what a vendor
    wrapper adds over the stock IP; the public-citable lineage.
 3. **Canonical references (a headline deliverable)** — a TABLE: each authoritative datasheet /
@@ -164,9 +160,10 @@ have caught must not first transit the very context that writes the target-OS co
    (`templates/spec-subagent-prompt.md`). The subagent
    **writes the spec to that path itself**, writes the file map to the provenance sidecar
    (`docs/provenance/<device>-map.txt`), and returns **only** `{path, one-paragraph summary,
-   <repo>@<commit>}` — no spec text and no file paths in its reply. The spec body itself is
-   attractant-free: facts stated as hardware facts, no source-tree paths, no "Linux does X in
-   file Y" narration.
+   <repo>@<commit>}` — no spec text and no file paths in its reply. Before returning, it runs
+   `notice_check.py` and the `leak_scan.py` self-scan on the file and fixes what they report. The
+   spec body itself is attractant-free: facts stated as hardware facts, no source-tree paths, no
+   "Linux does X in file Y" narration.
 2. The orchestrator spawns a **fresh verifier subagent** on the path
    (`templates/verifier-prompt.md`) — never the
    subagent that wrote the spec, never the main agent. The verifier is itself a designated
@@ -178,10 +175,13 @@ have caught must not first transit the very context that writes the target-OS co
    flagged sections in place at the scratch path, then re-verify. **After two FAILs on the same
    section, stop and escalate to the human with the verdict only** — repeated failure usually means
    the only authority for that mechanism *is* the source, and whether/how to express it is a
-   judgment call for a person.
+   judgment call for a person. Only FAILs from the independent verifier count toward the two: a
+   defect the writer's own mechanical self-check (`notice_check.py`, `leak_scan.py`) catches
+   before the spec is returned is fixed by the writer and is not a FAIL, so formatting slips
+   never trigger the escalation (user approved 2026-10-14).
 5. **Editing a landed spec re-enters this loop** (edit at a scratch copy, re-verify, re-land, new
-   ledger line). The ledger's content hash is how drift is detected: a spec whose hash no longer
-   matches its latest PASS line is unverified.
+   ledger line; the same counting applies). The ledger's content hash is how drift is detected: a
+   spec whose hash no longer matches its latest PASS line is unverified.
 
 ### The evidentiary ledger
 

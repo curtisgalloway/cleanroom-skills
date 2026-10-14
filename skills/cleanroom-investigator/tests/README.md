@@ -39,3 +39,10 @@ candidate fixture is an ~11-token shared run, which trips the scanner's own
 `--min-run` threshold and would make `clean_spec.md` fail as a false positive.
 The headers are omitted so the fixtures test the scanner rather than the
 boilerplate. Fixture provenance is stated in-band instead.
+
+## notice_check tests
+
+`test_notice_check.py` builds its passing spec from the shipped
+`cleanroom-spec/templates/usage-notice.md` by substituting `<device>`, so the
+template and `scripts/notice_check.py` cannot drift apart. The spec around the
+notice is an invented device and carries no real clean-room content.

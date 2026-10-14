@@ -34,11 +34,17 @@ installed.
 4. ATTRACTANTS: the spec body contains NO source-tree file paths and no "<source OS> does X in
    file Y" narration — facts read as hardware facts; the sidecar map exists at
    docs/provenance/<device>-map.txt and the spec's attestation carries only <repo>@<commit>.
-5. NOTICE: the spec opens with the clean-room usage notice instructing consumers (human or agent)
-   NOT to read the original source, naming the spec + its cited public references as the only
-   implementation inputs, routing gaps through the spec-gap protocol (docs/spec-gaps/), forbidding
-   verification of [source-observed] facts against the source and the opening of
-   docs/provenance/, and containing the pre-merge-gate and hash-match clauses.
+5. NOTICE: first run
+     python3 <cleanroom-investigator>/scripts/notice_check.py <path-to-spec>
+   and record its output; any finding is a FAIL. It checks mechanically that the notice from
+   <cleanroom-spec>/templates/usage-notice.md sits between its markers above the first "##"
+   section, carries all seven clauses with nothing left unfilled and no version or hash, and that
+   the spec names a filled <repo>@<commit> pin. Then judge what a script cannot: that the notice
+   is the template's text, not a reworded or weakened copy, and that it still instructs consumers
+   (human or agent) NOT to read the original source, names the spec + its cited public references
+   as the only implementation inputs, routes gaps through the spec-gap protocol (docs/spec-gaps/),
+   forbids verifying [source-observed] facts against the source and opening docs/provenance/, and
+   contains the pre-merge-gate and hash-match clauses. A notice the script passes can still fail.
 
 Return exactly: "PASS + <scan-report path>", or "FAIL + <scan-report path>" + a list of
 {section, line range, one-line reason} + whether the usage notice is missing or deficient.
