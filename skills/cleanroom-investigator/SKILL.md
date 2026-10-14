@@ -253,8 +253,17 @@ against encumbered source files:
    ≥ `--min-alpha` non-numeric tokens (default 5). Register tables *should* share numbers with the
    source; pure-numeric overlap never triggers on its own.
 2. **Identifier reuse** — code-shaped identifiers appearing in both, minus `--whitelist` (databook
-   nomenclature, one per line). lowercase/camelCase hits are high-signal (likely source-invented);
-   ALL-CAPS hits are listed separately as whitelist candidates.
+   nomenclature). lowercase/camelCase hits are high-signal (likely source-invented); ALL-CAPS hits
+   are listed separately as whitelist candidates.
+
+**Whitelist format.** One identifier per line, then `#`, then the public reference that uses the
+name: `SuperSpeed  # USB 3.2 spec, section 3.1`. Matching is case-insensitive and applies whatever
+the name's case, so a mixed-case standard term (`SuperSpeed`, `xHCI`) can be whitelisted when a
+public reference uses it; a name found only in source-OS code never can. A line that is only a
+comment stays a comment. If a name appears both cited and uncited, the cited entry wins. An entry with nothing after the identifier, or an empty comment, is
+*uncited*: by default it still suppresses hits but the report lists it in a `[whitelist]` section;
+with `--require-citations` it does not suppress, is reported as a finding, and the exit status is 1.
+Use `--require-citations` for the verifier and the self-scan.
 
 The report cites line ranges, lengths, and digests — it **never reproduces matched text** (bare
 identifier names are printed; a name is needed to act on the finding and isn't protectable
@@ -262,7 +271,7 @@ expression). Exit 0 clean / 1 findings / 2 error.
 
 ```
 python3 scripts/leak_scan.py DRAFT.md --against ~/src/linux/drivers/usb/dwc3/ \
-    --whitelist dwc3-nomenclature.txt
+    --whitelist dwc3-nomenclature.txt --require-citations
 ```
 
 It runs in three places: your self-check above; the `cleanroom-spec` verifier (mandatory); and the

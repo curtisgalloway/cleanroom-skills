@@ -27,8 +27,12 @@ CONSTRAINTS:
   encumbered source pile up in a context that also drafts the spec text.
 - Self-scan before returning if the source tree is local:
     python3 <cleanroom-investigator>/scripts/leak_scan.py <scratch path> --against <source paths> \
-        [--whitelist <databook nomenclature>]
-  Rewrite any finding. If sources were read remotely, note that the self-scan was skipped.
+        [--whitelist <nomenclature file> --require-citations]
+  Build the whitelist while drafting: when you introduce a name that a public reference (databook,
+  standard, datasheet) uses, add it at once as `<identifier>  # <reference>, <section or table>`,
+  whatever its case. Self-scan with the same whitelist file the verifier will use, so a standard
+  term is never discovered as a failure at verification time. Rewrite any other finding. If
+  sources were read remotely, note that the self-scan was skipped.
 - ATTRACTANT RULES: the spec body contains no source-tree file paths and no "Linux does X in
   file Y" narration — state facts as hardware facts. The [source-observed] tag says a fact came
   from code; it never says where.

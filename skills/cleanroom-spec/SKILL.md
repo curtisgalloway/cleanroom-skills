@@ -252,7 +252,7 @@ a contaminated session's diff is discarded wholesale and regenerated, never salv
 
 ```
 python3 <cleanroom-investigator>/scripts/leak_scan.py <new driver sources...> \
-    --against <provenance-map files at repo@commit> --whitelist <nomenclature file>
+    --against <provenance-map files at repo@commit> --whitelist <nomenclature file> --require-citations
 ```
 
 ### Consumer-side enforcement (see `cleanroom-implementer`)
