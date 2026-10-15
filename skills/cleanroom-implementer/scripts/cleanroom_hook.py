@@ -86,6 +86,7 @@ import json
 import os
 import re
 import shlex
+import subprocess
 import sys
 import time
 import urllib.parse
@@ -147,6 +148,64 @@ GIT_NO_SCAN = {
     "status", "add", "commit", "fetch", "push", "pull", "init", "config",
     "remote", "branch", "tag", "rev-parse", "mv", "rm", "worktree",
 }
+
+# `git diff` and `git grep` with no revision print only what the index, the
+# working tree and HEAD hold. In a big tree those two check the index and
+# HEAD file lists for firewalled names instead of walking the disk, which
+# would run out of budget in a tree the size of Fuchsia. Every other word
+# must be on these allowlists: an unknown option (an abbreviation, a
+# submodule or untracked flag), a revision or a global option other than
+# -C keeps the disk scan. history (log, show) always keeps it, because a
+# path dropped from the index stays readable there.
+GIT_TRACKED_FLAGS = {
+    "diff": {"--stat", "--shortstat", "--numstat", "--name-only",
+             "--name-status", "--cached", "--staged", "--color",
+             "--no-color", "-p", "--patch", "-w", "-b", "--check",
+             "--summary", "--raw", "--no-renames", "-M", "-R", "--exit-code",
+             "--quiet", "--word-diff", "--minimal", "--histogram",
+             "--patience", "--ignore-all-space", "--ignore-space-change"},
+    "grep": {"-n", "-i", "-l", "-L", "-c", "-w", "-v", "-E", "-F", "-P",
+             "-h", "-H", "-o", "-q", "-I", "--cached", "--line-number",
+             "--ignore-case", "--files-with-matches", "--count",
+             "--word-regexp", "--invert-match", "--fixed-strings",
+             "--extended-regexp", "--perl-regexp", "--color", "--no-color",
+             "--heading", "--break"},
+}
+# Options taking a value, attached (-U3, --unified=3) or, for -e/-A/-B/-C,
+# as the next word.
+GIT_TRACKED_VALUE_FLAGS = {
+    "diff": {"-U", "--unified", "--color", "--word-diff"},
+    "grep": {"-e", "-A", "-B", "-C", "-m", "--max-count", "--color",
+             "--after-context", "--before-context", "--context"},
+}
+GIT_GLOBALS_OK = {"--no-pager", "-P"}
+GIT_LS_TIMEOUT = 20
+# The hook runs git in a repository the implementer can write to, outside
+# its sandbox: repository config must not be able to run a command.
+GIT_SAFE_ARGS = ["-c", "core.fsmonitor=false", "-c",
+                 "core.untrackedCache=false", "-c", "core.hooksPath=/dev/null",
+                 "--no-optional-locks"]
+
+# Searches that read the pipe when they follow `|` and name no file. Only
+# the plain flags below qualify; anything else (-r, a context count written
+# as -3, a depth option, rg --files, an abbreviation) keeps the scan.
+STDIN_SEARCH = {
+    "grep": ("nivcoEFGwxlqsHh", "eABCm",
+             {"--line-number", "--ignore-case", "--invert-match", "--count",
+              "--only-matching", "--extended-regexp", "--fixed-strings",
+              "--word-regexp", "--line-regexp", "--quiet", "--silent",
+              "--no-messages", "--color", "--colour"},
+             {"--max-count", "--after-context", "--before-context",
+              "--context", "--regexp", "--color", "--colour"}),
+    "rg": ("nivcoFwxlqsSN", "eABCm",
+           {"--line-number", "--no-line-number", "--ignore-case",
+            "--no-config",
+            "--smart-case", "--fixed-strings", "--invert-match", "--count",
+            "--only-matching", "--word-regexp", "--quiet", "--color"},
+           {"--max-count", "--after-context", "--before-context",
+            "--context", "--regexp", "--color"}),
+}
+STDIN_SEARCH["egrep"] = STDIN_SEARCH["fgrep"] = STDIN_SEARCH["grep"]
 
 # git global options that take a separate argument (`git -C dir log`).
 GIT_ARG_OPTIONS = {"-C", "-c", "--git-dir", "--work-tree", "--namespace"}
@@ -477,10 +536,13 @@ def _check_token(token, names, base, env, scan, budget):
 
 
 def _segments(command):
-    """Split a command line into segments of shell words.
+    """Split a command line into (words, after_pipe) segments.
 
     Quotes, backslashes and $( ) / backtick boundaries are handled by the
     tokenizer, so a name split by quotes or an escape comes out whole.
+    Redirection operators (`>`, `>>`, `>&`, `&>`, `<&`, `>|`) are dropped;
+    their target is the next word, checked like any other. `after_pipe` is
+    True when the segment reads the previous one's output (`|` or `|&`).
     """
     text = command.replace("\n", " ; ").replace("`", " ; ")
     try:
@@ -490,19 +552,176 @@ def _segments(command):
         words = list(lex)
     except ValueError:
         words = re.split(r"[\s'\"]+", text)
-    segs, cur = [], []
+    segs, cur, piped = [], [], False
     for w in words:
         if w and all(c in ";&|()" for c in w):
             if cur:
-                segs.append(cur)
+                segs.append((cur, piped))
             cur = []
-        elif w and all(c in "<>" for c in w):
+            piped = w in ("|", "|&")
+        elif w and all(c in "<>&|" for c in w):
+            # A redirection operator. `>&` holds an `&` and used to be taken
+            # for a nested shell string, re-parsed into itself until the
+            # nesting cap denied `make 2>&1`.
             continue
         elif w:
             cur.append(w)
     if cur:
-        segs.append(cur)
+        segs.append((cur, piped))
     return segs
+
+
+def _reads_stdin(words, after_pipe, any_exists, env):
+    """True for a grep/rg that follows a pipe, names no existing path and
+    uses only plain flags: it searches the pipe, not the working directory."""
+    if not after_pipe or any_exists:
+        return False
+    tool = os.path.basename(words[0]).lower()
+    spec = STDIN_SEARCH.get(tool)
+    if not spec:
+        return False
+    # An rg config file adds flags and paths the command line does not show.
+    if (tool == "rg" and "--no-config" not in words and
+            (env.get("RIPGREP_CONFIG_PATH") or
+             os.environ.get("RIPGREP_CONFIG_PATH"))):
+        return False
+    short_flags, short_valued, long_flags, long_valued = spec
+    i = 1
+    while i < len(words):
+        word = words[i]
+        if word == "--":
+            break
+        if word.startswith("--"):
+            name, eq, _ = word.partition("=")
+            if name in long_valued and (eq or name not in long_flags):
+                if not eq:
+                    i += 1
+            elif name not in long_flags or eq:
+                return False
+        elif word.startswith("-") and len(word) > 1:
+            letters = word[1:]
+            for j, letter in enumerate(letters):
+                if letter in short_valued:
+                    rest = letters[j + 1:]
+                    if letter != "e" and rest and not rest.isdigit():
+                        return False
+                    if not rest:
+                        i += 1
+                        if letter != "e" and not (
+                                i < len(words) and words[i].isdigit()):
+                            return False
+                    break
+                if letter not in short_flags:
+                    return False
+        i += 1
+    return True
+
+
+def _git_tracked_plan(words, cur):
+    """For `git [-C dir] diff|grep <allowed options> [-- paths]`, the repo
+    directory to check by file list; None when the disk scan must run."""
+    repo, sub, i = cur, None, 1
+    while i < len(words):
+        word = words[i]
+        if word == "-C" and i + 1 < len(words):
+            nxt = os.path.expanduser(words[i + 1])
+            repo = nxt if os.path.isabs(nxt) else os.path.join(repo, nxt)
+            i += 2
+            continue
+        if word in GIT_GLOBALS_OK:
+            i += 1
+            continue
+        if word.startswith("-"):
+            return None
+        sub = word.lower()
+        break
+    if sub not in GIT_TRACKED_FLAGS or repo is None:
+        return None
+    flags, valued = GIT_TRACKED_FLAGS[sub], GIT_TRACKED_VALUE_FLAGS[sub]
+    pattern_needed = sub == "grep"
+    i += 1
+    while i < len(words):
+        word = words[i]
+        if word == "--":
+            return repo
+        if word.startswith("--"):
+            name, eq, _ = word.partition("=")
+            if not ((name in flags and not eq) or (name in valued and eq)):
+                return None
+        elif word.startswith("-") and len(word) > 1:
+            head = word[:2]
+            if head in valued and head != word:
+                if not word[2:].isdigit():
+                    return None
+            elif head in valued:
+                if head == "-e":
+                    pattern_needed = False
+                elif not (i + 1 < len(words) and words[i + 1].isdigit()):
+                    return None
+                i += 1
+            elif not all(f"-{c}" in flags for c in word[1:]):
+                return None
+        elif pattern_needed:
+            pattern_needed = False
+        else:
+            # Before `--` a word may be a revision (`git diff old --`), and
+            # history is not in the file lists. Paths go after `--`.
+            return None
+        i += 1
+    return repo
+
+
+def _git_lines(repo, args):
+    """Run a read-only git listing in `repo`; None when git fails."""
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    env.update({"GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull,
+                "GIT_TERMINAL_PROMPT": "0"})
+    try:
+        proc = subprocess.run(
+            ["git", "-C", repo] + GIT_SAFE_ARGS + args, env=env,
+            capture_output=True, timeout=GIT_LS_TIMEOUT, check=False)
+    except subprocess.TimeoutExpired as exc:
+        raise _LimitExceeded("git file list") from exc
+    except OSError:
+        return None
+    if proc.returncode != 0:
+        return None
+    return [r for r in proc.stdout.decode("utf-8", "replace").split("\0")
+            if r]
+
+
+def _git_tracked_hit(repo, names):
+    """Check the index and HEAD file lists of `repo` for a firewalled name.
+
+    Returns (checked, hit). `checked` is False when the lists cannot vouch
+    for what the command prints (not a repository, git missing, a submodule
+    whose content a diff can include), and the caller runs the disk scan.
+    A symlink in the index is resolved in the working tree and its target
+    name-checked, as the disk scan did.
+    """
+    index = _git_lines(repo, ["ls-files", "-s", "-z", "--", ":/"])
+    if index is None:
+        return False, None
+    head = _git_lines(repo, ["ls-tree", "-r", "-z", "--full-tree", "HEAD"])
+    top = _git_lines(repo, ["rev-parse", "--show-toplevel"])
+    top = top[0].strip() if top else repo
+    # core.worktree can point the working tree anywhere.
+    hit = _name_in(os.path.realpath(top), names)
+    if hit:
+        return True, hit
+    for record in index + (head or []):
+        meta, _, path = record.partition("\t")
+        mode = meta.split(" ", 1)[0]
+        if mode == "160000":
+            return False, None
+        hit = _name_in(path, names)
+        if hit:
+            return True, hit
+        if mode == "120000":
+            hit = _name_in(os.path.realpath(os.path.join(top, path)), names)
+            if hit:
+                return True, hit
+    return True, None
 
 
 ASSIGN_BUILTINS = {"export", "declare", "local", "readonly", "typeset"}
@@ -534,19 +753,47 @@ def _firewall_command(command, names, base, env, budget, depth=0):
     if hit:
         return hit
     cur = base
-    for words in _segments(command):
+    for words, after_pipe in _segments(command):
         words = _record_assignments(words, env)
         if not words:
             continue
         head = os.path.basename(words[0]).lower()
+        # `git grep` is git's own search over tracked files, not grep.
+        searched = (words[1:] if head != "git" else
+                    [w for w in words[1:] if w.lower() !=
+                     _git_subcommand(words)])
         searches = any(os.path.basename(w).lower() in SEARCH_TOOLS
-                       for w in words)
+                       for w in [words[0]] + searched)
         git_read = (head == "git" and
                     _git_subcommand(words) not in GIT_NO_SCAN)
         scan = head not in NO_SCAN_COMMANDS or searches or git_read
         budget.skip_git = git_read and not searches
+        tracked_repo = (_git_tracked_plan(words, cur)
+                        if git_read and not searches and cur is not None
+                        else None)
+        # In tracked mode the value of `git -C <dir>` is where git runs; the
+        # file lists cover what it can print, so it is only name-checked.
+        git_opt_values = set()
+        if tracked_repo is not None:
+            for i, w in enumerate(words[1:-1], 1):
+                if w == "-C":
+                    git_opt_values.add(i + 1)
+                elif not w.startswith("-") and i not in git_opt_values:
+                    break
+        # For git, a word before `--` is a revision when `--` follows, and a
+        # glob or `:`-magic pathspec matches across the whole repository: an
+        # existing file of the same spelling must not stand in for them.
+        git_not_paths = set(git_opt_values)
+        if git_read:
+            dashdash = words.index("--") if "--" in words else len(words)
+            for i, w in enumerate(words):
+                if (i < dashdash and dashdash < len(words)) or \
+                        w.startswith(":") or any(c in w for c in "*?["):
+                    git_not_paths.add(i)
         any_exists = False
-        for word in words:
+        for index, word in enumerate(words):
+            # In tracked mode the file lists stand in for walking any path.
+            word_scan = scan and tracked_repo is None
             for variant in _braces(word):
                 pieces = [variant]
                 if variant.startswith("-") and "=" in variant:
@@ -554,7 +801,7 @@ def _firewall_command(command, names, base, env, budget, depth=0):
                 elif variant.startswith("-"):
                     continue
                 for piece in pieces:
-                    if re.search(r"[\s;|&]|\$\(", piece):
+                    if piece != command and re.search(r"[\s;|&]|\$\(", piece):
                         if depth >= NESTING:
                             raise _LimitExceeded("nested shell strings")
                         hit = _firewall_command(piece, names, cur, env,
@@ -562,21 +809,38 @@ def _firewall_command(command, names, base, env, budget, depth=0):
                         if hit:
                             return hit
                     hit, exists = _check_token(
-                        piece, names, cur, env, scan, budget)
+                        piece, names, cur, env, word_scan, budget)
                     if hit:
                         return hit
                     any_exists = any_exists or (
-                        exists and piece is not words[0])
+                        exists and piece is not words[0] and
+                        index not in git_not_paths)
         if head in ("cd", "pushd") and cur is not None and len(words) > 1:
             target = os.path.expanduser(_expand_vars(words[1], env))
             full = target if os.path.isabs(target) else os.path.join(
                 cur, target)
             if os.path.isdir(full):
                 cur = os.path.realpath(full)
-        elif (searches or git_read) and not any_exists and cur is not None:
-            hit = _scan_dir(cur, names, budget)
-            if hit:
-                return hit
+        elif ((searches or git_read) and cur is not None and
+              (not any_exists or tracked_repo is not None)):
+            # Tracked mode checks the lists even when a path is named: with
+            # -C the paths belong to another repository, and pathspecs
+            # reach further than the file they happen to spell.
+            if searches and not git_read and _reads_stdin(
+                    words, after_pipe, any_exists, env):
+                pass
+            elif tracked_repo is not None:
+                checked, hit = _git_tracked_hit(tracked_repo, names)
+                if hit:
+                    return hit
+                if not checked:
+                    hit = _scan_dir(tracked_repo, names, budget)
+                    if hit:
+                        return hit
+            else:
+                hit = _scan_dir(cur, names, budget)
+                if hit:
+                    return hit
         budget.skip_git = False
     return None
 

@@ -821,6 +821,199 @@ class TestFirewallFailsClosedOnLimits(unittest.TestCase):
         self.assertNotIn("too broad", err)
 
 
+class TestBigTreeShell(unittest.TestCase):
+    """A first real implementer run in a Fuchsia-sized tree (2026-10-14) was
+    refused ordinary build commands as too broad. The scan budget is cut to
+    5 entries here so a 20-file tree plays the big tree."""
+
+    def setUp(self):
+        self.hook = load_hook_module()
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.root = pathlib.Path(self._tmp.name).resolve()
+        (self.root / "d").mkdir()
+        for i in range(20):
+            (self.root / "d" / f"f{i:02d}.txt").write_text("x\n")
+        self.pol = dict(self.hook.DEFAULT_POLICY)
+        self.hook.SCAN_ENTRIES = 5
+
+    def pick(self, command, cwd=None):
+        return self.hook.pick_target(
+            "run_command", {"CommandLine": command}, self.pol,
+            cwd=str(cwd or self.root))[1]
+
+    def git(self, *args):
+        subprocess.run(["git", "-C", str(self.root)] + list(args),
+                       check=True, capture_output=True)
+
+    # Redirections: `>&` was taken for a nested shell string and re-parsed
+    # into itself until the nesting cap denied the command.
+    def test_redirections_are_not_nested_shell_strings(self):
+        for cmd in ("make 2>&1", "make > out.log 2>&1", "make &> out.log",
+                    "make 2>&1 | tail -5", "make >> out.log", "make <&0"):
+            self.assertIsNone(self.pick(cmd), cmd)
+
+    def test_redirection_target_is_still_checked(self):
+        hit = self.pick("make > hardware-specs-gpl/out.log 2>&1")
+        self.assertEqual(hit, "name:hardware-specs-gpl")
+
+    # A grep or rg after a pipe, with only plain flags, reads the pipe.
+    def test_search_after_a_pipe_reads_the_pipe(self):
+        for cmd in ("make | grep error", "make 2>&1 | grep -n error",
+                    "cat x | egrep -i warn", "make |& grep error",
+                    "make | rg error", "make | grep -in -A3 error",
+                    "make | grep -B 2 -e error", "make | grep --color=never x",
+                    "make | rg -n --max-count 5 error"):
+            self.assertIsNone(self.pick(cmd), cmd)
+
+    def test_other_searches_still_scan(self):
+        # Review findings: a count written as -3, flags fused with a
+        # count, depth options (ugrep), a two-word directories option, an
+        # abbreviation, and rg --files all read the tree.
+        for cmd in ("make | grep -r error", "make | grep -rn error",
+                    "make | grep --recursive error", "make | grep -d recurse x",
+                    "make | grep -3 x", "make | grep -ir5 x",
+                    "make | grep -5r x", "make | grep --depth=3 x",
+                    "make | grep --directories recurse x",
+                    "make | grep --rec x", "echo x | rg --files",
+                    "grep error", "make || grep error",
+                    "cat x | xargs grep foo", "make | find -name x"):
+            hit = self.pick(cmd)
+            self.assertTrue(hit and hit.startswith("limit:"), (cmd, hit))
+
+    def test_recursive_search_after_a_pipe_still_finds_names(self):
+        self.hook.SCAN_ENTRIES = 3000
+        (self.root / "hardware-specs-gpl").mkdir()
+        self.assertEqual(self.pick("make | grep -r error"),
+                         "name:hardware-specs-gpl")
+
+    # git diff and git grep without revisions check the index and HEAD.
+    def commit(self, *paths):
+        self.git("add", *paths)
+        self.git("-c", "user.name=t", "-c", "user.email=t@example.com",
+                 "commit", "-q", "-m", "x")
+
+    def plant(self, rel="vendor/hardware-specs-gpl/a.yaml"):
+        f = self.root / rel
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text("x\n")
+        return rel.split("/")[0]
+
+    def test_git_diff_and_grep_check_the_file_lists(self):
+        self.git("init", "-q")
+        self.commit("d")
+        for cmd in ("git diff", "git diff --cached", "git diff --stat",
+                    "git diff -U5", "git grep foo", "git grep -n -e foo",
+                    "git grep -in foo", f"git -C {self.root} diff",
+                    "git diff -- gone.c"):
+            self.assertIsNone(self.pick(cmd), cmd)
+
+    def test_history_and_unlisted_options_keep_the_disk_scan(self):
+        # Review findings: history, abbreviations, submodule and untracked
+        # flags, and -c before -C.
+        self.git("init", "-q")
+        self.commit("d")
+        for cmd in ("git log -p", "git show HEAD", "git diff HEAD~1",
+                    "git diff --no-ind a b", "git grep --untrack x",
+                    "git grep --untracked x", "git grep --no-index x",
+                    "git grep --recurse-submodules x",
+                    "git diff --submodule=diff",
+                    f"git -c color.ui=never -C {self.root} diff",
+                    "git --work-tree=. diff"):
+            hit = self.pick(cmd)
+            self.assertTrue(hit and hit.startswith("limit:"), (cmd, hit))
+
+    def test_a_tracked_firewalled_path_is_found(self):
+        self.git("init", "-q")
+        self.git("add", self.plant(), "d")
+        self.assertEqual(self.pick("git diff --cached"),
+                         "name:hardware-specs-gpl")
+        # From a subdirectory git diff still prints the whole repository.
+        self.assertEqual(self.pick("git diff", cwd=self.root / "d"),
+                         "name:hardware-specs-gpl")
+
+    def test_a_path_only_in_head_is_found(self):
+        # Committed, then dropped from the index: git diff --cached prints
+        # it as a deletion.
+        self.git("init", "-q")
+        top = self.plant()
+        self.commit(top, "d")
+        self.git("rm", "-r", "-q", "--cached", top)
+        self.assertEqual(self.pick("git diff --cached"),
+                         "name:hardware-specs-gpl")
+
+    def test_a_tracked_symlink_into_a_firewalled_dir_is_found(self):
+        self.git("init", "-q")
+        outside = pathlib.Path(self._tmp.name + "-x") / "hardware-specs-gpl"
+        outside.mkdir(parents=True)
+        self.addCleanup(lambda: __import__("shutil").rmtree(outside.parent))
+        (self.root / "link").symlink_to(outside)
+        self.git("add", "link", "d")
+        self.assertEqual(self.pick("git diff --cached"),
+                         "name:hardware-specs-gpl")
+
+    def test_a_submodule_keeps_the_disk_scan(self):
+        self.git("init", "-q")
+        self.git("add", "d")
+        self.git("update-index", "--add", "--cacheinfo",
+                 "160000,1111111111111111111111111111111111111111,sub")
+        hit = self.pick("git diff --cached")
+        self.assertTrue(hit and hit.startswith("limit:"), hit)
+
+    def test_repository_config_cannot_run_a_command(self):
+        # Review finding: the hook ran core.fsmonitor from a repository the
+        # implementer can write, outside its sandbox.
+        self.git("init", "-q")
+        self.git("add", "d")
+        marker = self.root / "PWNED"
+        self.git("config", "core.fsmonitor", f"touch {marker}; false")
+        self.assertIsNone(self.pick("git diff"))
+        self.assertFalse(marker.exists())
+
+    def test_git_outside_a_repository_keeps_the_disk_scan(self):
+        hit = self.pick("git diff")
+        self.assertTrue(hit and hit.startswith("limit:"), hit)
+
+    # Second review round.
+    def test_git_dash_c_with_a_local_path_checks_the_other_repo(self):
+        other = pathlib.Path(self._tmp.name + "-other")
+        (other / "hardware-specs-gpl").mkdir(parents=True)
+        self.addCleanup(lambda: __import__("shutil").rmtree(other))
+        (other / "hardware-specs-gpl" / "s.c").write_text("x\n")
+        subprocess.run(["git", "-C", str(other), "init", "-q"], check=True)
+        subprocess.run(["git", "-C", str(other), "add", "."], check=True)
+        for cmd in (f"git -C {other} grep -e x -- .",
+                    f"git -C {other} diff --cached -- d"):
+            self.assertEqual(self.pick(cmd), "name:hardware-specs-gpl", cmd)
+
+    def test_a_pathspec_glob_does_not_narrow_the_check(self):
+        self.git("init", "-q")
+        self.git("add", self.plant(), "d")
+        self.assertEqual(self.pick("git grep -e x -- d '*.c'"),
+                         "name:hardware-specs-gpl")
+
+    def test_a_word_before_dashdash_is_a_revision(self):
+        self.git("init", "-q")
+        self.commit("d")
+        (self.root / "old").write_text("x\n")
+        hit = self.pick("git diff old --")
+        self.assertTrue(hit and hit.startswith("limit:"), hit)
+
+    def test_an_rg_config_file_cancels_the_pipe_exemption(self):
+        hit = self.pick("export RIPGREP_CONFIG_PATH=cfg; make | rg -e x")
+        self.assertTrue(hit and hit.startswith("limit:"), hit)
+        self.assertIsNone(self.pick(
+            "export RIPGREP_CONFIG_PATH=cfg; make | rg --no-config -e x"))
+
+    def test_core_worktree_into_a_firewalled_dir_is_found(self):
+        self.git("init", "-q")
+        self.git("add", "d")
+        target = self.root / "hardware-specs-gpl"
+        target.mkdir()
+        self.git("config", "core.worktree", str(target))
+        self.hook.SCAN_ENTRIES = 3000
+        self.assertEqual(self.pick("git diff"), "name:hardware-specs-gpl")
+
 class TestFirewallFormParity(HookCase):
     """The same target is judged the same way whichever form carries it."""
 

@@ -218,12 +218,28 @@ more, or one containing whitespace, is only matched by name, and a search expres
 `pattern`, `query` and the like is never resolved as a path). `cargo` and `make` are not treated
 as reading a directory argument. `git` is treated as reading one for every subcommand except a short
 list that prints no file or history content (`status`, `add`, `commit`, `fetch`, `push` and the
-like); an unknown subcommand or a user alias scans, and a scan for `git` skips `.git` itself. Known false
-denials, chosen over a silent allow: any tool call carrying a `query`-style key and no path scans
-the working directory, a pipeline such as `cargo test | grep fail` does too (the hook does not
-tell a search of stdin from one of the tree), and a working directory over the 3,000-entry budget
-(a large `target/` or `node_modules/`) denies them with the narrower-path message; the fix is a
-path argument. A search tool whose directory sits under a key the hook has no table for is
+like); an unknown subcommand or a user alias scans, and a scan for `git` skips `.git` itself.
+`git diff` and `git grep` with no revision and only listed options print
+what the index, the working tree and HEAD hold, so instead of walking the disk they check the
+whole repository's index and HEAD file lists for blocked names, and the targets of tracked
+symlinks (a tree the size of Fuchsia would exhaust the budget). Anything else keeps the disk
+scan: a revision, an option off the list (an abbreviation, `--untracked`, `--no-index`,
+`--recurse-submodules`), a global option other than `-C`, a repository with a submodule, and
+every history command (`log -p`, `show`), because a path dropped from the index stays readable in
+history. In a big tree those need a path argument. The hook runs that listing with repository
+hooks, `core.fsmonitor` and global and system config switched off and `GIT_*` cleared: the
+implementer can write the repository's config, and the hook runs outside its sandbox. A grep,
+egrep, fgrep or rg that follows a pipe, names no existing file and uses only plain flags (`-n`,
+`-i`, `-v`, `-A 3`, `-e`, …) reads the pipe and is not a tree search; any other flag (`-r`, a
+count written `-3`, `rg --files`) keeps the scan, as does `| xargs grep`, and so does rg
+when `RIPGREP_CONFIG_PATH` is set without `--no-config` (the hook sees that variable in its own
+environment and in the same command line, not in an export a harness carried over from an
+earlier call). Redirections (`2>&1`,
+`&> log`) are parsed as such; until 2026-10-14 `>&` was taken for a nested shell string and denied
+every `make 2>&1`. Known false denials, chosen over a silent allow: any
+tool call carrying a `query`-style key and no path scans the working directory, and a working
+directory over the 3,000-entry budget (a large `target/` or `node_modules/`) denies it with the
+narrower-path message; the fix is a path argument. A search tool whose directory sits under a key the hook has no table for is
 resolved by name but not scanned below. An internal error in the check is a separate denial
 ("internal error", not "too broad").
 
