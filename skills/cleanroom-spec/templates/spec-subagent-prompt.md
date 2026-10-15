@@ -27,7 +27,12 @@ CONSTRAINTS:
   encumbered source pile up in a context that also drafts the spec text.
 - Self-scan before returning if the source tree is local:
     python3 <cleanroom-investigator>/scripts/leak_scan.py <scratch path> --against <source paths> \
+        [--vendor-region <file>:<start>-<end> per vendor table] \
         [--whitelist <nomenclature file> --require-citations]
+  Name the source files by path. Mark every vendor table you read (microcode, a patch table) in
+  the sidecar map as `<file>:<start>-<end>  # vendor table: <what>` and pass each as
+  --vendor-region; the spec says such a blob must be loaded and where it comes from, never what
+  is in it.
   Build the whitelist while drafting: when you introduce a name that a public reference (databook,
   standard, datasheet) uses, add it at once as `<identifier>  # <reference>, <section or table>`,
   whatever its case. Self-scan with the same whitelist file the verifier will use, so a standard

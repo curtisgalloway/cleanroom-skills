@@ -260,6 +260,22 @@ against encumbered source files:
 2. **Identifier reuse** — code-shaped identifiers appearing in both, minus `--whitelist` (databook
    nomenclature). lowercase/camelCase hits are high-signal (likely source-invented); ALL-CAPS hits
    are listed separately as whitelist candidates.
+3. **Vendor-table constants** (with `--vendor-region <file>:<start>-<end>`, repeatable) — hex
+   constants in the candidate whose value appears inside a declared vendor-table region of a
+   source file (embedded microcode, a firmware patch table, any data the source may redistribute
+   but not license for reuse) and nowhere else in the sources. A spec that breaks such a table
+   down register by register shares numbers, not token runs, so checks 1 and 2 pass it: one
+   RTL8125B transfer FAIL in 2026-10 was exactly this, caught only by the reviewer. Values
+   below `--vendor-min-value` (default `0x100`) are ignored. A region that yields no table-only
+   value, runs past its file's end, or lies in a file not named in `--against` is an error, not
+   a clean scan. The report gives candidate lines and region lines, never the values (a digest of
+   a 16-bit value is reversible). It reads `0x…` literals (with `_` separators and C or Rust
+   suffixes), Verilog `'h…` and digit-led `…h`; it does **not** read bare hex in a table column,
+   values split into bytes, or decimal, so a clean result says nothing about those. Declare
+   **every** copy of a table (one per chip variant, say): an undeclared copy makes its values
+   look like ordinary code constants, and they stop counting.
+   A table's contents are not hardware facts to re-express: say that the device needs a vendor
+   patch loaded and where the blob comes from, never what is in it.
 
 **Whitelist format.** One identifier per line, then `#`, then the public reference that uses the
 name: `SuperSpeed  # USB 3.2 spec, section 3.1`. Matching is case-insensitive and applies whatever
@@ -329,7 +345,9 @@ calling agent's actual question is your instruction.
    provenance — do the lookup.
 6. **Record provenance.** Note `<repo>@<commit>` (branch as context) and the file paths read — as a
    *map*, never reproducing their contents. In a project, the file list goes to the sidecar
-   (`docs/provenance/<device>-map.txt`), not into the report or spec body. Keep it precise: this
+   (`docs/provenance/<device>-map.txt`), not into the report or spec body. Mark every
+   vendor-table region you saw on its own line, `<file>:<start>-<end>  # vendor table: <what>`,
+   so every scan passes it as `--vendor-region`. Keep it precise: this
    map is what the independent verifier scans against, and later what the implementation's output
    scan diffs against. When the consumer-side hook from `cleanroom-implementer` is installed, run
    with `CLEANROOM_ROLE=investigator` in your environment so your authorized source reads are

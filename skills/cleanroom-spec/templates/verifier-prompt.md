@@ -17,6 +17,7 @@ installed.
 1. MECHANICAL: run
      python3 <cleanroom-investigator>/scripts/leak_scan.py <path-to-spec> \
          --against <files from the sidecar map> \
+         [--vendor-region <file>:<start>-<end> for each vendor-table line in the map] \
          [--whitelist <nomenclature file> --require-citations]
    Save the full report to docs/provenance/<device>-scan-<date>.txt. Review every finding. An
    identifier hit, whatever its case, that is the name a cited public reference (databook,

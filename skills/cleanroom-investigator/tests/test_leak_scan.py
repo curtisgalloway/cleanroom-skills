@@ -254,5 +254,126 @@ class TestWhitelistCitations(unittest.TestCase):
         self.assertIn("[whitelist] 0 uncited", out)
 
 
+# Invented device with an embedded vendor patch table. Line 6-9 is the table;
+# 0x1234 is also a register offset the code uses, so it is not table-only,
+# and 0x00ff falls under the default --vendor-min-value.
+VENDOR_SOURCE = """\
+#define FAKE_PATCH_BASE 0x1234
+static void fake_apply(void) {
+    fake_write(0x1234, 1);
+}
+static const unsigned short fake_patch[] = {
+    0xbeef, 0x1234,
+    0x00ff, 0xc0de,
+    0x7a7a,
+};
+"""
+
+
+class TestVendorRegion(unittest.TestCase):
+    """--vendor-region: a spec that breaks a vendor table down value by value
+    shares numbers with the source, not token runs, so checks 1 and 2 pass it
+    (an RTL8125B transfer FAIL that leak_scan missed, 2026-10)."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        root = pathlib.Path(self.tmp.name)
+        self.src = root / "fake_patch.c"
+        self.src.write_text(VENDOR_SOURCE)
+        self.leaky = root / "leaky.md"
+        self.leaky.write_text(
+            "## Patch\n\nWord 0 is 0xBEEF.\n\nWord 3 is 0C0DEh.\n")
+        self.clean = root / "clean.md"
+        self.clean.write_text(
+            "## Registers\n\nThe patch base is 0x1234; mask 0xFF.\n")
+        self.region = f"{self.src}:6-9"
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_table_only_values_are_findings(self):
+        rc, out = run_scan(self.leaky, "--against", self.src,
+                           "--vendor-region", self.region)
+        self.assertEqual(rc, 1, out)
+        self.assertIn("[vendor] 2 value(s)", out)
+        self.assertIn("candidate L3", out)
+        self.assertIn("candidate L5", out)
+
+    def test_same_candidate_is_clean_without_the_region(self):
+        rc, out = run_scan(self.leaky, "--against", self.src)
+        self.assertEqual(rc, 0, out)
+
+    def test_values_used_outside_the_table_or_small_do_not_count(self):
+        rc, out = run_scan(self.clean, "--against", self.src,
+                           "--vendor-region", self.region)
+        self.assertEqual(rc, 0, out)
+        self.assertIn("[vendor] 0 value(s)", out)
+
+    def test_report_never_prints_table_values(self):
+        rc, out = run_scan(self.leaky, "--against", self.src,
+                           "--vendor-region", self.region)
+        self.assertEqual(rc, 1, out)
+        self.assertNotIn("sha1", out.split("[vendor]")[1],
+                         "a digest of a 16-bit value is reversible")
+        self.assertNotIn("beef", out.lower())
+        self.assertNotIn("c0de", out.lower())
+
+    def test_bad_region_spec_is_usage_error(self):
+        for spec in (str(self.src), f"{self.src}:9-6", "nofile.c:1-2"):
+            rc, out = run_scan(self.leaky, "--against", self.src,
+                               "--vendor-region", spec)
+            self.assertEqual(rc, 2, f"{spec}: {out}")
+            self.assertIn("--vendor-region", out)
+            self.assertNotIn("unrecognized arguments", out)
+
+    def test_range_past_end_of_file_is_usage_error(self):
+        rc, out = run_scan(self.leaky, "--against", self.src,
+                           "--vendor-region", f"{self.src}:6-500")
+        self.assertEqual(rc, 2, out)
+        self.assertIn("runs past", out)
+
+    def test_region_file_must_be_scanned(self):
+        other = pathlib.Path(self.tmp.name) / "other.c"
+        other.write_text("int other;\n")
+        rc, out = run_scan(self.leaky, "--against", other,
+                           "--vendor-region", self.region)
+        self.assertEqual(rc, 2, out)
+        self.assertIn("not among the --against sources", out)
+
+    def test_each_region_must_contribute(self):
+        # One good region does not cover for a mistyped second one.
+        rc, out = run_scan(self.leaky, "--against", self.src,
+                           "--vendor-region", self.region,
+                           "--vendor-region", f"{self.src}:2-2")
+        self.assertEqual(rc, 2, out)
+        self.assertIn(f"{self.src}:2-2", out)
+
+    def test_code_literal_forms_are_read(self):
+        # Separators, C/Rust suffixes and Verilog sized literals, as an
+        # output scan of driver code would meet them.
+        code = pathlib.Path(self.tmp.name) / "new_driver.rs"
+        code.write_text("const A: u16 = 0xBE_EF_u16;\n"
+                        "const B: u32 = 0xC0DEu;\n"
+                        "// 16'h7A7A\n")
+        rc, out = run_scan(code, "--against", self.src,
+                           "--vendor-region", self.region)
+        self.assertEqual(rc, 1, out)
+        self.assertIn("[vendor] 3 value(s)", out)
+
+    def test_min_value_is_inclusive_and_adjustable(self):
+        rc, out = run_scan(self.clean, "--against", self.src,
+                           "--vendor-region", self.region,
+                           "--vendor-min-value", "0xff")
+        self.assertEqual(rc, 1, out)
+        self.assertIn("[vendor] 1 value(s)", out)
+
+    def test_inert_region_is_an_error_not_a_clean_scan(self):
+        # Lines 1-4 hold only 0x1234, which the code also uses.
+        rc, out = run_scan(self.leaky, "--against", self.src,
+                           "--vendor-region", f"{self.src}:1-4")
+        self.assertEqual(rc, 2, out)
+        self.assertIn("inert", out)
+
+
 if __name__ == "__main__":
     unittest.main()
