@@ -221,6 +221,11 @@ Rules that follow from the tags:
 
 - Could a reader paste any of this into a compiler? → Rewrite as description or table.
 - Any ~15+ word run matching the source wording? → Re-express.
+- Any phrase in quotation marks outside the usage notice? Each one must be the name of a cited standard term, databook
+  name or device-tree binding property, with its citation. A short quoted phrase that follows the
+  source's own wording (a comment, a log message, a function's purpose) is a leak no scanner
+  flags: three of four transfer-review FAILs in one 2026-10 run were exactly this. Unquote it and
+  say it in your own words.
 - Any `struct`/macro/function body, even small? → Replace with a field table or "the layout is …" prose.
 - Am I mirroring the file's structure/naming step-by-step? Are my tables grouped per the databook,
   not driver-touch order? → Reframe in the hardware's organization.
@@ -255,6 +260,22 @@ against encumbered source files:
 2. **Identifier reuse** — code-shaped identifiers appearing in both, minus `--whitelist` (databook
    nomenclature). lowercase/camelCase hits are high-signal (likely source-invented); ALL-CAPS hits
    are listed separately as whitelist candidates.
+3. **Vendor-table constants** (with `--vendor-region <file>:<start>-<end>`, repeatable) — hex
+   constants in the candidate whose value appears inside a declared vendor-table region of a
+   source file (embedded microcode, a firmware patch table, any data the source may redistribute
+   but not license for reuse) and nowhere else in the sources. A spec that breaks such a table
+   down register by register shares numbers, not token runs, so checks 1 and 2 pass it: one
+   RTL8125B transfer FAIL in 2026-10 was exactly this, caught only by the reviewer. Values
+   below `--vendor-min-value` (default `0x100`) are ignored. A region that yields no table-only
+   value, runs past its file's end, or lies in a file not named in `--against` is an error, not
+   a clean scan. The report gives candidate lines and region lines, never the values (a digest of
+   a 16-bit value is reversible). It reads `0x…` literals (with `_` separators and C or Rust
+   suffixes), Verilog `'h…` and digit-led `…h`; it does **not** read bare hex in a table column,
+   values split into bytes, or decimal, so a clean result says nothing about those. Declare
+   **every** copy of a table (one per chip variant, say): an undeclared copy makes its values
+   look like ordinary code constants, and they stop counting.
+   A table's contents are not hardware facts to re-express: say that the device needs a vendor
+   patch loaded and where the blob comes from, never what is in it.
 
 **Whitelist format.** One identifier per line, then `#`, then the public reference that uses the
 name: `SuperSpeed  # USB 3.2 spec, section 3.1`. Matching is case-insensitive and applies whatever
@@ -264,6 +285,11 @@ comment stays a comment. If a name appears both cited and uncited, the cited ent
 *uncited*: by default it still suppresses hits but the report lists it in a `[whitelist]` section;
 with `--require-citations` it does not suppress, is reported as a finding, and the exit status is 1.
 Use `--require-citations` for the verifier and the self-scan.
+
+**Pass `--against` the files in your provenance map, by path.** A directory is filtered to source
+extensions (`.c .h .s .S .rs .dts .dtsi .inc .asm`); anything else under it (a Kconfig, a `.yaml`
+binding, a Makefile) is not read, and the report lists it under `[skipped]`. A file named outright
+is always read. Read the `against` count and the `[skipped]` list before trusting a clean result.
 
 The report cites line ranges, lengths, and digests — it **never reproduces matched text** (bare
 identifier names are printed; a name is needed to act on the finding and isn't protectable
@@ -319,7 +345,9 @@ calling agent's actual question is your instruction.
    provenance — do the lookup.
 6. **Record provenance.** Note `<repo>@<commit>` (branch as context) and the file paths read — as a
    *map*, never reproducing their contents. In a project, the file list goes to the sidecar
-   (`docs/provenance/<device>-map.txt`), not into the report or spec body. Keep it precise: this
+   (`docs/provenance/<device>-map.txt`), not into the report or spec body. Mark every
+   vendor-table region you saw on its own line, `<file>:<start>-<end>  # vendor table: <what>`,
+   so every scan passes it as `--vendor-region`. Keep it precise: this
    map is what the independent verifier scans against, and later what the implementation's output
    scan diffs against. When the consumer-side hook from `cleanroom-implementer` is installed, run
    with `CLEANROOM_ROLE=investigator` in your environment so your authorized source reads are

@@ -99,6 +99,12 @@ fields rather than tool-name tables, so they also run unchanged under Claude Cod
 The `assets/` under `cleanroom-implementer` are install material for *consuming* projects,
 not this repo's own configuration.
 
+For **Claude Code**, [claude-code-agents/](claude-code-agents/README.md) holds agent definitions
+for the four roles (implementer, investigator, transfer reviewer, technical reader). The
+implementer's definition restricts its tools and runs the cleanroom hook on its own tool calls. Copy them into
+a project's `.claude/agents/`; that README says how to launch each one and what they cannot
+enforce.
+
 The design behind the pipeline is in [DESIGN.md](DESIGN.md), moved from driver-lab's design.
 
 ## Installing

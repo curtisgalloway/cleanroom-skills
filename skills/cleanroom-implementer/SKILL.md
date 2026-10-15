@@ -155,6 +155,13 @@ sandbox (observed 2026-09-25: a provider outage returned 401 for both).
    an unmapped name in `tools:` is dropped silently, which is either a tool you thought you'd
    removed or one you thought you had.
 
+**Under Claude Code**, the restricted subagent is
+`claude-code-agents/cleanroom-implementer.md` at the repository root: no web, MCP, delegation or
+Skill tool, and this hook attached in its frontmatter so it runs only on the implementer's own
+calls. Install it into the project's `.claude/agents/`, not through the plugin: Claude Code drops
+`hooks:` from plugin agents. That README lists what it cannot enforce: no read allowlist, no
+hook in `claude -p` sessions.
+
 Choose the permission mode deliberately. `request-review` (the default) prompts per operation.
 `proceed-in-sandbox` auto-approves inside the sandbox and asks outside it, which is the right mode
 for an unattended implementer. **Do not use `strict`** — it denies all non-read operations, and

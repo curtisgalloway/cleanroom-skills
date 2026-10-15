@@ -38,6 +38,16 @@ working) but the report lists them in a "[whitelist]" section. With
 findings (whether or not the candidate uses them), and the exit status is 1.
 The flag has no effect without --whitelist.
 
+  3. Vendor-table constants (only with --vendor-region): hex constants in
+     the candidate whose value appears inside a declared vendor-table region
+     of a source file (embedded microcode, a firmware patch table, any data
+     the source may redistribute but not license for reuse) and nowhere else
+     in the sources. Token runs miss these: a spec that breaks such a table
+     down register by register shares numbers, not runs. A value that also
+     appears outside every region (a register offset used by the code) does
+     not count, and values below --vendor-min-value are ignored as too
+     common to mean anything.
+
 The report cites locations, lengths, and digests but NEVER prints matched
 text from the sources. (Identifier names are printed: a bare name is
 needed to act on the finding and is not protectable expression.)
@@ -53,6 +63,24 @@ import sys
 
 TOKEN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*|0[xX][0-9A-Fa-f]+|\d+")
 IDENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+# Source constants are C/Rust/asm hex literals; a candidate may also write
+# assembler-style 1A2Bh, which must start with a digit (0C0DEh) so that
+# English words made of hex letters ("each", "beach") never parse as values.
+# Both forms normalize to an integer value.
+# Underscore digit separators (0xbe_ef) are allowed and stripped, and a
+# C or Rust type suffix (0xBEEFu, 0xBEEFUL, 0xBEEF_u16) is skipped.
+# Verilog's 16'hBEEF is read too. Not read: bare hex with no marker, values
+# split into bytes, and decimal - say so when relying on a clean result.
+SRC_HEX_RE = re.compile(r"\b0[xX]([0-9A-Fa-f][0-9A-Fa-f_]*)|'[hH]([0-9A-Fa-f][0-9A-Fa-f_]*)")
+CAND_HEX_RE = re.compile(
+    r"\b0[xX]([0-9A-Fa-f][0-9A-Fa-f_]*)(?:[uUlL]+|[uUiI]\d+)?\b"
+    r"|'[hH]([0-9A-Fa-f][0-9A-Fa-f_]*)\b"
+    r"|\b([0-9][0-9A-Fa-f_]*)[hH]\b")
+
+
+def hex_value(match):
+    digits = next(g for g in match.groups() if g)
+    return int(digits.replace("_", ""), 16)
 
 SOURCE_EXTS = {".c", ".h", ".s", ".S", ".rs", ".dts", ".dtsi", ".inc", ".asm"}
 
@@ -83,21 +111,97 @@ def read_text(path):
 
 
 def collect_sources(paths):
-    """Expand files/dirs into a list of source files (dirs filtered by ext)."""
-    out = []
+    """Expand files/dirs into (source files, skipped files).
+
+    Directories are filtered by extension; a file named outright is always
+    read. The skipped list is reported, because a file left out without a
+    word reads as a clean scan of it.
+    """
+    out, skipped = [], []
     for p in paths:
         pp = pathlib.Path(p)
         if pp.is_dir():
             for f in sorted(pp.rglob("*")):
-                if f.is_file() and f.suffix in SOURCE_EXTS:
+                if not f.is_file():
+                    continue
+                if f.suffix in SOURCE_EXTS:
                     out.append(f)
+                else:
+                    skipped.append(f)
         elif pp.is_file():
             out.append(pp)
         else:
             die(f"source path not found: {p}")
     if not out:
         die("no source files found under --against paths")
-    return out
+    return out, skipped
+
+
+def parse_region(spec):
+    """'path:start-end' -> (path, start, end), 1-based inclusive lines."""
+    path, sep, span = spec.rpartition(":")
+    start, dash, end = span.partition("-")
+    if not (sep and dash and start.isdigit() and end.isdigit()):
+        die(f"--vendor-region wants PATH:START-END, got {spec!r}")
+    start, end = int(start), int(end)
+    if start < 1 or end < start:
+        die(f"--vendor-region line range is empty or reversed: {spec!r}")
+    if not pathlib.Path(path).is_file():
+        die(f"--vendor-region file not found: {path}")
+    nlines = len(read_text(path).splitlines())
+    if end > nlines:
+        die(f"--vendor-region {spec!r} runs past the file's {nlines} lines")
+    return path, start, end
+
+
+def region_only_values(regions, sources, min_value):
+    """Map value -> (region label, line within the region) for hex values
+    inside a vendor region that appear nowhere else in the sources.
+
+    Every region must lie in a file being scanned (so checks 1 and 2 cover it
+    too) and must contribute at least one such value; otherwise the check
+    would be inert for that region and is refused.
+    """
+    by_file = {}
+    for path, start, end in regions:
+        by_file.setdefault(pathlib.Path(path).resolve(), []).append(
+            (start, end, f"{path}:{start}-{end}"))
+    scanned = {pathlib.Path(sp).resolve() for sp in sources}
+    for f in by_file:
+        if f not in scanned:
+            die(f"--vendor-region file is not among the --against sources "
+                f"(name it there by path): {f}")
+    inside, outside = {}, set()
+    for f in sorted(scanned):
+        spans = by_file.get(f, [])
+        for ln, line in enumerate(read_text(f).splitlines(), 1):
+            hit = next(((lab, ln - a + 1) for a, b, lab in spans
+                        if a <= ln <= b), None)
+            for m in SRC_HEX_RE.finditer(line):
+                val = hex_value(m)
+                if hit:
+                    inside.setdefault(val, hit)
+                else:
+                    outside.add(val)
+    vendor = {v: hit for v, hit in inside.items()
+              if v not in outside and v >= min_value}
+    for spans in by_file.values():
+        for _, _, label in spans:
+            if not any(lab == label for lab, _ in vendor.values()):
+                die(f"--vendor-region {label}: no hex value >= "
+                    f"--vendor-min-value appears only there, so the check "
+                    f"would be inert for it; check the line range (tables "
+                    f"written in decimal or bare hex never parse)")
+    return vendor
+
+
+def candidate_hex(text):
+    """Map value -> sorted candidate line numbers."""
+    found = {}
+    for ln, line in enumerate(text.splitlines(), 1):
+        for m in CAND_HEX_RE.finditer(line):
+            found.setdefault(hex_value(m), set()).add(ln)
+    return {k: sorted(v) for k, v in found.items()}
 
 
 def tokenize(text):
@@ -234,6 +338,16 @@ def main():
                     help="with --whitelist: uncited entries do not suppress "
                          "hits, are reported as findings, and make the exit "
                          "status 1")
+    ap.add_argument("--vendor-region", action="append", default=[],
+                    metavar="PATH:START-END",
+                    help="lines of a source file holding a vendor table "
+                         "(microcode, a patch table); repeatable. Hex "
+                         "constants found only there are findings when the "
+                         "candidate uses them")
+    ap.add_argument("--vendor-min-value", type=lambda v: int(v, 0),
+                    default=0x100,
+                    help="ignore vendor-table values below this (default "
+                         "0x100: small numbers are too common to signal)")
     ap.add_argument("--min-run", type=int, default=10,
                     help="min matching-run length in tokens (default 10)")
     ap.add_argument("--min-alpha", type=int, default=5,
@@ -254,7 +368,8 @@ def main():
         if not args.require_citations:
             whitelist.update(ident.lower() for _, ident in uncited)
 
-    sources = collect_sources(args.against)
+    sources, skipped = collect_sources(args.against)
+    regions = [parse_region(r) for r in args.vendor_region]
     src_data = []          # (path, tokens, line_numbers)
     src_idents = {}        # identifier -> first source path seen in
     for sp in sources:
@@ -270,6 +385,21 @@ def main():
     print(f"  params     : min-run={args.min_run} min-alpha={args.min_alpha} "
           f"k={args.k} whitelist={len(whitelist)} entries"
           f"{' require-citations' if args.require_citations else ''}")
+    vendor = {}
+    if regions:
+        vendor = region_only_values(regions, sources, args.vendor_min_value)
+        print(f"  vendor     : {len(regions)} region(s), {len(vendor)} "
+              f"region-only value(s) >= {args.vendor_min_value:#x}")
+    if skipped:
+        print(f"\n[skipped] {len(skipped)} file(s) under --against "
+              f"directories were NOT read (extension not one of "
+              f"{' '.join(sorted(SOURCE_EXTS))}); name a file outright "
+              f"to scan it")
+        for f in skipped[:args.max_report]:
+            print(f"  - {f}")
+        if len(skipped) > args.max_report:
+            print(f"  ... {len(skipped) - args.max_report} more suppressed "
+                  f"(--max-report)")
 
     if args.whitelist:
         if not uncited:
@@ -285,6 +415,7 @@ def main():
             print(f"  - {ident}  (whitelist L{ln})")
 
     total_runs = 0
+    total_vendor = 0
     total_high = 0
     total_caps = 0
 
@@ -340,14 +471,34 @@ def main():
             more = f" +{len(lines) - 5}" if len(lines) > 5 else ""
             print(f"  - {ident}  (in {sp})  candidate {loc}{more}")
 
-    findings = total_runs + total_high + total_caps
+        # --- Check 3: vendor-table constants ---
+        if regions:
+            hits = sorted((lines, val, vendor[val])
+                          for val, lines in candidate_hex(text).items()
+                          if val in vendor)
+            total_vendor += len(hits)
+            print(f"[vendor] {len(hits)} value(s) found only in a declared "
+                  f"vendor-table region of the source")
+            for lines, val, (label, row) in hits[:args.max_report]:
+                # No value and no digest: a 16- or 32-bit value is
+                # recovered from its hash by brute force in seconds.
+                loc = ",".join(f"L{n}" for n in lines[:5])
+                more = f" +{len(lines) - 5}" if len(lines) > 5 else ""
+                print(f"  - candidate {loc}{more}  <->  {label} "
+                      f"(region line {row})")
+            if len(hits) > args.max_report:
+                print(f"  ... {len(hits) - args.max_report} more suppressed "
+                      f"(--max-report)")
+
+    findings = total_runs + total_high + total_caps + total_vendor
     if args.require_citations:
         findings += len(uncited)
     extra = (f", {len(uncited)} uncited whitelist entr(ies)"
              if args.whitelist else "")
     print(f"\nsummary: {total_runs} run(s), {total_high} high-signal "
           f"identifier(s), {total_caps} all-caps identifier(s) to review"
-          f"{extra}")
+          f"{extra}"
+          f"{f', {total_vendor} vendor-table value(s)' if regions else ''}")
     print("verdict:", "FINDINGS - review required" if findings else "clean")
     sys.exit(1 if findings else 0)
 
