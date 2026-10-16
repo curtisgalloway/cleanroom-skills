@@ -68,6 +68,70 @@ gaps into fresh `cleanroom-investigator` runs, amends the spec through the full 
 marks the line `[resolved <date>]`. Filing a gap is never a failure and never costs you the task;
 reading the source costs the whole session's diff.
 
+## Closing a run: the handoff (every implementer run, initial or fix)
+
+Before your final reply, write a handoff for the next round from `assets/handoff-template.md` to
+`docs/handoffs/<device>-round-<N>.md`, where `<N>` is 1 for the initial run and one more than
+the handoff you were given in a fix round (or the path your brief names instead). Write a new
+file each round and never edit an earlier one: the next round's brief pins its sha256.
+
+Fill every section: branch and commits (base and head), spec path and hash, files changed,
+the exact build and test commands with the counts they gave, where the test harnesses live,
+findings addressed (fix rounds), open questions, gotchas met (hook blocks, toolchain quirks)
+and what the next round must not redo. Keep it to about 150 lines. Clean side only: name a
+hook block by the kind of call and the gap it led to, never by the blocked path, which would
+make the handoff an attractant. Commit the handoff with your last change, and end your reply
+with its path and sha256.
+
+The handoff is what lets a fix round start fresh. Without it the orchestrator's only cheap way to
+give the next round your working knowledge is to resume you, with your whole context.
+
+## Fix rounds (a fresh fix implementer, not a resumed one)
+
+**For orchestrators.** After review, a round of fixes goes to a fresh fix implementer, started
+from the handoff, whenever the implementer that would otherwise be resumed has passed about
+**200k tokens of context**: never resume it. Use the harness's own count where it reports one.
+A small follow-up (a question about its work, a one-line fix) may still resume it on either side
+of that line. The reason is measured: in a bring-up project, one implementer resumed for four
+review-fix rounds grew past 600k tokens of context and re-read all of it on every tool call; it
+alone used 15% of the night's subagent tokens. A fresh agent reading a 150-line handoff, the
+findings and a diff starts at a small fraction of that, under the same rules.
+
+The brief for a fix round names four inputs, each one checkable:
+
+1. the landed spec and its sha256;
+2. the previous round's handoff and its sha256;
+3. the findings to fix: a review-swarm `final.json` (or `verified.json` when it was not
+   refereed), or a plain numbered list; and
+4. the base commit the previous round produced.
+
+Write it from the landed spec, the handoff, the findings and your own plan, never from
+dirty-side output and never by pasting the predecessor's transcript.
+
+**If you are the fix implementer**, the standing rules above bind you unchanged, and so does
+the spec-gap protocol. In addition:
+
+1. Check both hashes before anything else: the spec's against the brief, and the handoff's
+   against the brief. On a mismatch, or a missing input, stop and report it.
+2. Read only the handoff, the findings, the spec (and its cited references under
+   `docs/references/`), and the diff and files the handoff and findings name. Never ask for,
+   search for or read the predecessor's transcript or session log: the handoff is the whole
+   inheritance by design. If it is not enough, say what is missing in your reply rather than
+   reconstructing it.
+3. Fix exactly the listed findings, and nothing else. For each one, first write or extend a test
+   that fails on the base commit for the reason the finding gives, then fix it, then run the
+   handoff's build and test commands and compare with its baseline counts. A finding you cannot
+   reproduce, cannot pin with a test, or that needs a fact the spec lacks is not fixed: file a
+   spec gap where it is one, record it under "Findings addressed", and move on.
+4. Read the diff with path arguments (`git diff <base> -- <files>`): in a large tree the hook
+   denies a whole-repository diff against a revision as too broad.
+5. Close the run with a new handoff, as above.
+
+Under Claude Code this role has its own restricted agent, `cleanroom-fix-implementer`
+(`claude-code-agents/` at the repository root), with the implementer's tools and hook. Under
+Antigravity and Codex the same restricted implementer runs a fix round from a brief with the four
+inputs above.
+
 ## Enforcement layers (install once per project)
 
 **Tier 1 — environment (the actual guarantee).** Implementation sessions run in a workspace that
@@ -340,6 +404,7 @@ spec is missing something. Sweep the gap file.
 - `assets/driver-implementer.md` — restricted subagent (no web, no MCP, no `invoke_subagent`,
   sandboxed shell).
 - `assets/agents-md-block.md` — the standing-rules block for `AGENTS.md` / `.agent/rules/`.
+- `assets/handoff-template.md` — the handoff every implementer run writes for the next round.
 
 Antigravity moves fast, and it has already relocated hooks, settings and skills between releases.
 Every path, event name and field name here was correct when written and is cited as such — but if a
