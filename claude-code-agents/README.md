@@ -11,7 +11,7 @@ a named subagent. Its frontmatter can restrict the subagent's tools and attach h
 while it runs. A *hook* is a command the harness runs before each tool call that can block the call.
 The *wall*, the *dirty side* and *encumbered source* are in the [glossary](../GLOSSARY.md).
 
-Four thin wrappers. The investigator's agent is named `cleanroom-source-investigator`, not after
+Five thin wrappers. The investigator's agent is named `cleanroom-source-investigator`, not after
 its skill: the implementer's hook denies any recursive search of a directory that holds a file
 named `cleanroom-investigator`, and `.claude/agents/` is inside the project. Each one preloads its skill, takes its per-run inputs from the launch prompt,
 and stops when an input is missing. The role text stays in the skills, so Codex and Antigravity
@@ -20,13 +20,14 @@ keep working from the skills alone.
 | Agent | Role | Skill it wraps |
 | --- | --- | --- |
 | `cleanroom-implementer` | writes driver code from a landed spec | `cleanroom-implementer` |
+| `cleanroom-fix-implementer` | fixes listed review findings, starting fresh from the previous round's handoff | `cleanroom-implementer` (its "Fix rounds" section) |
 | `cleanroom-source-investigator` | reads source, returns facts or writes a spec draft | `cleanroom-investigator` (`cleanroom-spec`'s template for a spec run) |
 | `cleanroom-transfer-reviewer` | the five-check review before a spec lands | `cleanroom-spec/templates/verifier-prompt.md` |
 | `cleanroom-technical-reader` | the accuracy pass (numbers, sequencing, or both on a recheck) | `cleanroom-verifier`, with driver-lab's `spec-verifier` |
 
 ## Install (per project)
 
-Copy them into the project; a plugin cannot ship them. Claude Code ignores `hooks:` in an agent
+Copy all five into the project; a plugin cannot ship them. Claude Code ignores `hooks:` in an agent
 loaded from a plugin, so the implementer would load there with no hook. That is why this directory
 is not named `agents/`, which a plugin loads automatically. Run from the project root, with
 `<cleanroom-skills>` replaced by your checkout or plugin directory:
@@ -56,8 +57,10 @@ Then:
    the one that matters.
 4. **Provoke it.** In an interactive session, launch `cleanroom-implementer` with a brief that asks
    it to read one file under a `checkout_roots` entry. The read must be denied, and a `blocked`
-   line must appear in `docs/provenance/hook-blocks.jsonl`. Do this after every install and every
-   Claude Code upgrade. Without that line, the hook is not running.
+   line must appear in `docs/provenance/hook-blocks.jsonl`. Then do the same with
+   `cleanroom-fix-implementer`: it carries its own copy of the hook in its own frontmatter, so one
+   agent's block line says nothing about the other's. Do this after every install and every
+   Claude Code upgrade. Without those lines, the hook is not running.
 
 ## Launch
 
@@ -66,6 +69,10 @@ Name the agent in the delegation tool call (`subagent_type: cleanroom-implemente
 
 - **implementer**: the landed spec path and its sha256, the target tree, the work. Write the brief
   from the landed spec and your own plan, never from dirty-side output.
+- **fix implementer**: the landed spec path and its sha256, the previous round's handoff
+  (`docs/handoffs/<device>-round-<N>.md`) and its sha256, the findings to fix (a review-swarm
+  `final.json` or `verified.json`, or a plain numbered list), and the base commit the previous
+  round produced. Never the predecessor's transcript.
 - **source investigator**: for a spec, the filled `cleanroom-spec/templates/spec-subagent-prompt.md`; for
   a question, the question, board and IP, pins, and where the source is.
 - **transfer reviewer**: the filled `cleanroom-spec/templates/verifier-prompt.md` (candidate path
@@ -74,6 +81,21 @@ Name the agent in the delegation tool call (`subagent_type: cleanroom-implemente
   recheck), scope (`numbers`, `sequencing`, or `combined` for a recheck), pins, sidecar map, cited
   references, and a record path unique to that round and scope. A first review launches two, one
   per scope.
+
+### Fix rounds: fresh agent or resume?
+
+Every implementer run ends by writing a short handoff (`docs/handoffs/<device>-round-<N>.md`,
+from `cleanroom-implementer`'s `assets/handoff-template.md`). When review findings come back:
+
+- If the implementer that wrote the code has passed about **200k tokens of context**, launch a
+  fresh `cleanroom-fix-implementer` from its handoff. Do not resume it.
+- A small follow-up (a question about its work, a one-line fix) may still resume it.
+
+Why: in a bring-up project, one implementer resumed for four review-fix rounds grew past 600k
+tokens and re-read its whole context on every tool call, using 15% of the night's subagent tokens
+on its own. Use the harness's own count of the agent's context where it gives one. Where the
+harness reports no context size, treat any implementer that has finished a full run as past the
+line: every fix round then goes to a fresh fix implementer.
 
 ## What these definitions enforce, and what they cannot
 

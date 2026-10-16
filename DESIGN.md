@@ -156,6 +156,32 @@ permissions, restricted agents, and instructions add defense and evidence. The i
 targets Antigravity, while the scripts describe harness-neutral event handling. Verify actual
 enforcement in the consuming harness; installing the plugin alone does not establish it.
 
+### Fix rounds: start fresh from a handoff
+
+New in this repository (2026-10-16), not moved from driver-lab.
+
+An implementer's context only grows. Resuming it for a review-fix round keeps its working
+knowledge, but every tool call in that round re-reads the whole context, so the cost of each
+round rises with every round before it. In a bring-up project, one clean-room implementer was
+resumed for four review-fix rounds, grew past 600k tokens of context, and used 15% of the
+night's subagent tokens on its own.
+
+So every implementer run ends by writing a short handoff (`cleanroom-implementer`, "Closing a
+run"; about 150 lines): commits, spec and hash, files changed, exact build and test commands with
+baseline counts, test harness locations, open questions, gotchas, and what the next round must
+not redo. Once the implementer has passed about 200k tokens of context (or, where the harness reports no
+context size, once it has finished a full run), a fix round goes to a
+fresh fix implementer whose brief pins four inputs: the landed spec and its hash, the handoff and
+its hash, the findings, and the base commit. It reads those and the diff they name, never the
+predecessor's transcript; it fixes exactly the listed findings, test-first, and writes the next
+handoff. A small follow-up (a question, a one-line fix) may still resume the old agent, because
+a short exchange costs less than writing and reading a handoff.
+
+The wall is unchanged by this. The fix implementer has the implementer's tools, hook and
+standing rules, and the handoff is clean-side text: it names a hook block by the kind of call
+and the gap it led to, never by the blocked path. A fresh context is, if anything, a smaller
+surface than a resumed one, since it carries nothing the handoff does not say.
+
 ### Evaluation
 
 From driver-lab's "Evaluation" (line 428) *(recast)*: in the frozen campaigns, candidate production

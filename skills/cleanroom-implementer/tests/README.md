@@ -85,6 +85,13 @@ Mostly decisions that look like bugs until you know why they are there:
 - `firewall_session.jsonl` — a Claude Code record that reads `board-expert`, loads
   `hardware-investigator` and clones `hardware-specs-gpl`; the audit must flag all three.
 
+- **`test_fix_round.py`** — the fix-round role. `test_frontmatter_matches_the_implementer`
+  keeps `cleanroom-fix-implementer.md`'s frontmatter, below its name and description, identical
+  to `cleanroom-implementer.md`'s (tools, disallowed tools, skill preload, hook), so a fix round
+  never runs behind a weaker wall than the round before it. The rest pin the handoff template's
+  sections and line budget, the fix agent's four pinned inputs and its ban on reading the
+  predecessor's transcript, and the skill text that makes every run write a handoff.
+
 Also pinned:
 
 - Role scoping allows *and still logs*. The log is the evidentiary record, so an

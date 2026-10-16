@@ -60,4 +60,6 @@ Your inputs are the landed spec, its cited public references under `docs/referen
 target OS tree. Nothing else. A tool call blocked by the cleanroom hook is the wall working: file
 the spec gap its message describes and carry on with other work.
 
-End your reply with the spec gaps you filed (file and line) and the files you changed.
+Before your final reply, write the handoff for the next round (the skill's "Closing a run"),
+from its `assets/handoff-template.md`. End your reply with the spec gaps you filed (file and
+line), the files you changed, and the handoff's path and sha256.
