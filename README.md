@@ -100,10 +100,21 @@ The `assets/` under `cleanroom-implementer` are install material for *consuming*
 not this repo's own configuration.
 
 For **Claude Code**, [claude-code-agents/](claude-code-agents/README.md) holds agent definitions
-for the four roles (implementer, investigator, transfer reviewer, technical reader). The
-implementer's definition restricts its tools and runs the cleanroom hook on its own tool calls. Copy them into
-a project's `.claude/agents/`; that README says how to launch each one and what they cannot
-enforce.
+for five roles (implementer, fix implementer, investigator, transfer reviewer, technical reader).
+The two implementers' definitions restrict their tools and run the cleanroom hook on their own
+tool calls. Copy them into a project's `.claude/agents/`; that README says how to launch each one
+and what they cannot enforce.
+
+**Review-fix rounds: start fresh past about 200k tokens.** Every implementer run ends by writing a
+short handoff (about 150 lines: commits, spec hash, files, build and test commands with counts,
+open questions, gotchas, what not to redo). When review findings come back and the implementer
+that wrote the code has passed about 200k tokens of context, the orchestrator gives the fix round
+to a fresh fix implementer started from that handoff, and does not resume the old one. A small
+follow-up (a question, a one-line fix) may still resume it. The reason is measured: in a
+bring-up project, one implementer resumed for four rounds grew past 600k tokens, re-read all of
+it on every tool call, and used 15% of the night's subagent tokens on its own. The rule and the
+fix implementer's procedure are in `cleanroom-implementer` ("Fix rounds"); the reasoning is in
+[DESIGN.md](DESIGN.md#fix-rounds-start-fresh-from-a-handoff).
 
 The design behind the pipeline is in [DESIGN.md](DESIGN.md), moved from driver-lab's design.
 
