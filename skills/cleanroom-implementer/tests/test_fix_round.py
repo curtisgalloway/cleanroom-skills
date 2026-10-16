@@ -148,6 +148,12 @@ class TestSkillText(unittest.TestCase):
         self.assertIn("200k tokens of context", self.text)
         self.assertIn("never resume it", self.text)
 
+    def test_threshold_rule_has_a_fallback_without_a_count(self):
+        # Some harnesses report no context size; the rule must still decide.
+        self.assertIn("reports no context size", self.text)
+        readme = (AGENTS / "README.md").read_text(encoding="utf-8")
+        self.assertIn("reports no context size", readme)
+
     def test_implementer_agent_writes_the_handoff(self):
         self.assertIn("handoff-template.md", IMPLEMENTER.read_text(encoding="utf-8"))
 

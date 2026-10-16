@@ -91,6 +91,9 @@ give the next round your working knowledge is to resume you, with your whole con
 **For orchestrators.** After review, a round of fixes goes to a fresh fix implementer, started
 from the handoff, whenever the implementer that would otherwise be resumed has passed about
 **200k tokens of context**: never resume it. Use the harness's own count where it reports one.
+Where the harness reports no context size, do not estimate one: treat any implementer that has
+finished a full run (an implementation or a fix round) as past the line, so every fix round goes to
+a fresh fix implementer.
 A small follow-up (a question about its work, a one-line fix) may still resume it on either side
 of that line. The reason is measured: in a bring-up project, one implementer resumed for four
 review-fix rounds grew past 600k tokens of context and re-read all of it on every tool call; it

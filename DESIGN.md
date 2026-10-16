@@ -169,7 +169,8 @@ night's subagent tokens on its own.
 So every implementer run ends by writing a short handoff (`cleanroom-implementer`, "Closing a
 run"; about 150 lines): commits, spec and hash, files changed, exact build and test commands with
 baseline counts, test harness locations, open questions, gotchas, and what the next round must
-not redo. Once the implementer has passed about 200k tokens of context, a fix round goes to a
+not redo. Once the implementer has passed about 200k tokens of context (or, where the harness reports no
+context size, once it has finished a full run), a fix round goes to a
 fresh fix implementer whose brief pins four inputs: the landed spec and its hash, the handoff and
 its hash, the findings, and the base commit. It reads those and the diff they name, never the
 predecessor's transcript; it fixes exactly the listed findings, test-first, and writes the next

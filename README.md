@@ -109,7 +109,9 @@ and what they cannot enforce.
 short handoff (about 150 lines: commits, spec hash, files, build and test commands with counts,
 open questions, gotchas, what not to redo). When review findings come back and the implementer
 that wrote the code has passed about 200k tokens of context, the orchestrator gives the fix round
-to a fresh fix implementer started from that handoff, and does not resume the old one. A small
+to a fresh fix implementer started from that handoff, and does not resume the old one. Where the
+harness reports no context size, any implementer that has finished a full run counts as past the
+line. A small
 follow-up (a question, a one-line fix) may still resume it. The reason is measured: in a
 bring-up project, one implementer resumed for four rounds grew past 600k tokens, re-read all of
 it on every tool call, and used 15% of the night's subagent tokens on its own. The rule and the

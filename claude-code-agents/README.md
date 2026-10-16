@@ -93,7 +93,9 @@ from `cleanroom-implementer`'s `assets/handoff-template.md`). When review findin
 
 Why: in a bring-up project, one implementer resumed for four review-fix rounds grew past 600k
 tokens and re-read its whole context on every tool call, using 15% of the night's subagent tokens
-on its own. Use the harness's own count of the agent's context where it gives one.
+on its own. Use the harness's own count of the agent's context where it gives one. Where the
+harness reports no context size, treat any implementer that has finished a full run as past the
+line: every fix round then goes to a fresh fix implementer.
 
 ## What these definitions enforce, and what they cannot
 
